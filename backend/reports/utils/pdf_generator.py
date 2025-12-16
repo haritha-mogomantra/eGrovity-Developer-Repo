@@ -1,0 +1,149 @@
+# ===========================================================
+# reports/utils/pdf_generator.py
+# ===========================================================
+# Utility for generating PDF reports for employee performance
+# using ReportLab. Reusable for both individual and bulk reports.
+# ===========================================================
+
+from io import BytesIO
+from django.utils import timezone
+from django.http import HttpResponse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+
+def generate_employee_performance_pdf(employee, evaluations, week=None):
+    """
+    Generates a printable PDF performance report for a given employee.
+
+    Args:
+        employee: Employee model instance
+        evaluations: Queryset of PerformanceEvaluation objects
+        week: Optional ISO week (e.g., '2025-W43')
+
+    Returns:
+        HttpResponse (PDF file ready for download)
+    """
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf.setTitle(f"Performance Report - {employee.user.emp_id}")
+
+    # -----------------------------------------------------------
+    # HEADER SECTION
+    # -----------------------------------------------------------
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(160, 800, "Employee Performance Report")
+
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.drawString(50, 780, f"Employee ID : {employee.user.emp_id}")
+    pdf.setFont("Helvetica", 12)
+    pdf.drawString(50, 755, f"Name: {employee.user.first_name} {employee.user.last_name}")
+    pdf.drawString(50, 740, f"Department: {employee.department.name if employee.department else 'N/A'}")
+
+    # Manager Name
+    manager_obj = getattr(employee, "manager", None)
+    manager_full_name = (
+        f"{manager_obj.first_name} {manager_obj.last_name}".strip()
+        if manager_obj else "-"
+    )
+    pdf.drawString(50, 725, f"Manager: {manager_full_name}")     # ✅ ADDED
+
+    # Week
+    if week:
+        pdf.drawString(50, 710, f"Week: {week}")
+
+    pdf.drawString(50, 695, f"Generated On: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # -----------------------------------------------------------
+    # TABLE HEADER
+    # -----------------------------------------------------------
+    y = 680
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.setFillColor(colors.darkblue)
+    pdf.drawString(50, y, "Evaluation Type")
+    pdf.drawString(200, y, "Average Score")
+    pdf.drawString(330, y, "Planned Hours")
+    pdf.drawString(440, y, "Actual Hours")
+    pdf.setFillColor(colors.black)
+    pdf.line(45, y - 5, 550, y - 5)
+
+    # -----------------------------------------------------------
+    # TABLE DATA
+    # -----------------------------------------------------------
+    pdf.setFont("Helvetica", 11)
+    y -= 25
+    total_avg = 0
+    count = 0
+
+    for eval_obj in evaluations:
+        try:
+            metrics = eval_obj.metrics_breakdown or {}
+            if metrics:
+                numeric_values = [float(v) for v in metrics.values() if isinstance(v, (int, float))]
+                avg_score = round(sum(numeric_values) / len(numeric_values), 2) if numeric_values else 0
+            else:
+                avg_score = 0
+
+        except Exception:
+            avg_score = 0
+
+        pdf.drawString(50, y, eval_obj.evaluation_type or "N/A")
+        pdf.drawString(200, y, str(avg_score))
+        planned_hours = getattr(eval_obj, "planned_hours", None) or "-"
+        actual_hours = getattr(eval_obj, "actual_hours", None) or "-"
+
+        pdf.drawString(330, y, str(planned_hours))
+        pdf.drawString(440, y, str(actual_hours))
+
+
+        y -= 20
+        count += 1
+        total_avg += avg_score
+
+        # Auto new page
+        if y < 80:
+            pdf.showPage()
+            y = 800
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(50, y, "Evaluation Type")
+            pdf.drawString(200, y, "Average Score")
+            pdf.drawString(330, y, "Planned Hours")
+            pdf.drawString(440, y, "Actual Hours")
+            pdf.line(45, y - 5, 550, y - 5)
+            pdf.setFont("Helvetica", 11)
+            y -= 25
+
+    # -----------------------------------------------------------
+    # SUMMARY SECTION
+    # -----------------------------------------------------------
+    if count > 0:
+        overall_avg = round(total_avg / count, 2)
+    else:
+        overall_avg = 0
+
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.drawString(50, y - 15, f"Total Evaluations: {count}")
+    pdf.drawString(250, y - 15, f"Overall Average Score: {overall_avg}")
+    pdf.drawString(450, y - 15, f"Feedback Avg: {getattr(employee, 'latest_feedback_avg', 0)}")
+
+    # -----------------------------------------------------------
+    # FOOTER
+    # -----------------------------------------------------------
+    pdf.setFont("Helvetica-Oblique", 10)
+    pdf.setFillColor(colors.grey)
+    pdf.drawString(200, 40, "Generated by Employee Performance Tracking System (EPTS)")
+    pdf.setFillColor(colors.black)
+
+    # Finalize PDF
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+
+    # -----------------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------------
+    filename = f"Performance_Report_{employee.user.emp_id}_{timezone.now().strftime('%Y%m%d')}.pdf"
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

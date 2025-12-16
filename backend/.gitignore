@@ -1,0 +1,9 @@
+# Django media uploads
+media/
+
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env

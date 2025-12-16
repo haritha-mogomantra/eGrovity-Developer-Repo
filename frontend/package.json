@@ -1,0 +1,68 @@
+{
+  "name": "epts-admin-dashboard",
+  "version": "1.0.0",
+  "description": "Enterprise Project Tracking System (EPTS) - Admin Dashboard",
+  "homepage": ".",
+  "bugs": {
+    "url": "https://github.com/yourusername/epts-admin-dashboard/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:yourusername/epts-admin-dashboard.git"
+  },
+  "license": "Private",
+  "author": "EPTS Development Team",
+  "scripts": {
+    "build": "vite build",
+    "lint": "eslint",
+    "serve": "vite preview",
+    "start": "vite"
+  },
+  "dependencies": {
+    "@coreui/chartjs": "^4.1.0",
+    "@coreui/coreui": "^5.4.1",
+    "@coreui/icons": "^3.0.1",
+    "@coreui/icons-react": "^2.3.0",
+    "@coreui/react": "^5.7.1",
+    "@coreui/react-chartjs": "^3.0.0",
+    "@coreui/utils": "^2.0.2",
+    "@popperjs/core": "^2.11.8",
+    "axios": "^1.12.2",
+    "axios-mock-adapter": "^2.1.0",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
+    "chart.js": "^4.5.1",
+    "classnames": "^2.5.1",
+    "core-js": "^3.45.0",
+    "file-saver": "^2.0.5",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
+    "prop-types": "^15.8.1",
+    "react": "^19.1.1",
+    "react-bootstrap": "^2.10.10",
+    "react-bootstrap-icons": "^1.11.6",
+    "react-chartjs-2": "^5.3.0",
+    "react-dom": "^19.1.1",
+    "react-icons": "^5.5.0",
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.7.1",
+    "recharts": "^3.4.1",
+    "redux": "5.0.1",
+    "simplebar-react": "^3.3.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.32.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "postcss": "^8.5.6",
+    "prettier": "3.6.2",
+    "sass": "^1.90.0",
+    "vite": "^7.1.0"
+  }
+}
