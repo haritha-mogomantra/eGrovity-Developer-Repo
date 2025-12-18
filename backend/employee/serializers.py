@@ -715,14 +715,12 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
         if missing:
             raise serializers.ValidationError({"error": f"CSV missing columns: {', '.join(missing)}"})
 
-        # Department column logic (case-insensitive)
-        if "department code" in normalized_header_map:
-            dept_key = normalized_header_map["department code"]
-        elif "department" in normalized_header_map:
+        # Department column (Department NAME only)
+        if "department" in normalized_header_map:
             dept_key = normalized_header_map["department"]
         else:
             raise serializers.ValidationError({
-                "error": "CSV must contain a 'Department Code' or 'Department' column."
+                "error": "CSV must contain a 'Department' column (Department Name)."
             })
 
         if missing:
@@ -748,7 +746,10 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
 
                     # 1️⃣ Mandatory Field Validation
                     if not all([email, first_name, last_name, dept_code, role, joining_date_str]):
-                        errors.append(f"Row {i}: Missing one or more mandatory fields.")
+                        errors.append(
+                            f"Row {i}: Missing mandatory fields "
+                            f"(First Name, Last Name, Email, Role, Department, Joining Date)."
+                        )
                         continue
 
                     # 2️⃣ Validate Role
@@ -769,36 +770,15 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         #| models.Q(id__iexact=dept_code)
                     #).first()
                     # Normalize department input
-                    original_dept = dept_code
-                    dept_code = dept_code.strip().lower()
+                    dept_name = dept_code.strip()
 
-                    # Try direct match by code or full name
                     department = Department.objects.filter(
-                        Q(code__iexact=dept_code) |
-                        Q(name__iexact=dept_code) |
-                        Q(code__icontains=dept_code) |
-                        Q(name__icontains=dept_code)
+                        name__iexact=dept_name,
+                        is_active=True
                     ).first()
 
-                    # If still not found, try advanced matching
                     if not department:
-                        for dept in Department.objects.all():
-                            name = dept.name.lower()
-                            code = dept.code.lower()
-
-                            # Matches 'eng', 'engg', 'engine', etc.
-                            if dept_code in name or dept_code in code:
-                                department = dept
-                                break
-
-                            # If CSV has 'Engineering' and code is ENG
-                            if name.startswith(dept_code) or code.startswith(dept_code):
-                                department = dept
-                                break
-
-                    # If still not found → report error
-                    if not department:
-                        errors.append(f"Row {i}: Department '{original_dept}' not found.")
+                        errors.append(f"Row {i}: Department '{dept_name}' not found.")
                         continue
 
                     # Check active status
@@ -818,10 +798,15 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         continue
 
                     # 6️⃣ Validate Joining Date format
-                    try:
-                        joining_date = datetime.strptime(joining_date_str, "%Y-%m-%d").date()
-                    except ValueError:
-                        errors.append(f"Row {i}: Joining Date must be in YYYY-MM-DD format.")
+                    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+                        try:
+                            joining_date = datetime.strptime(joining_date_str, fmt).date()
+                            break
+                        except ValueError:
+                            joining_date = None
+
+                    if not joining_date:
+                        errors.append(f"Row {i}: Joining Date must be YYYY-MM-DD or DD-MM-YYYY.")
                         continue
 
                     # 7️⃣ Validate Duplicate Employee (Same Name + Dept)
@@ -842,16 +827,42 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         )
                         continue
 
-                    # 8️⃣ Manager Validation
+                    # 8️⃣ Manager Validation (Accepts Full Name OR Emp ID)
                     manager = None
+
                     if manager_emp_id and manager_emp_id not in ["", "None", "null"]:
-                        manager = Employee.objects.filter(user__emp_id__iexact=manager_emp_id).first()
+                        manager_value = manager_emp_id.strip()
+
+                        # 1️⃣ Try Emp ID
+                        manager = Employee.objects.filter(
+                            user__emp_id__iexact=manager_value,
+                            is_deleted=False
+                        ).first()
+
+                        # 2️⃣ Try Full Name (First + Last)
                         if not manager:
-                            errors.append(f"Row {i}: Manager '{manager_emp_id}' not found.")
+                            name_parts = manager_value.split()
+                            if len(name_parts) >= 2:
+                                manager = Employee.objects.filter(
+                                    Q(user__first_name__iexact=name_parts[0]) &
+                                    Q(user__last_name__iexact=name_parts[-1]),
+                                    is_deleted=False
+                                ).first()
+
+                        # 3️⃣ Final validation
+                        if not manager:
+                            errors.append(
+                                f"Row {i}: Manager '{manager_value}' not found (use full name or emp_id)."
+                            )
                             continue
-                        if not getattr(manager.user, "role", None) in ["Manager", "Admin"]:
-                            errors.append(f"Row {i}: Manager '{manager_emp_id}' must have role Manager/Admin.")
+
+                        # 4️⃣ Role check
+                        if manager.user.role not in ["Manager", "Admin"]:
+                            errors.append(
+                                f"Row {i}: Manager '{manager_value}' must have role Manager/Admin."
+                            )
                             continue
+
 
                     # 9️⃣ Contact number validation
                     if contact_number:
