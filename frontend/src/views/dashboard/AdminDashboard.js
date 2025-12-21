@@ -235,10 +235,12 @@ function PerformanceDashboard() {
     .sort((a, b) => b - a)
     .slice(0, 3);
 
-  const topPerformers = employees.filter(emp => emp.rank <= 3);
+  const topPerformers = employees.filter(
+    emp => emp.rank <= 3 && emp.score > 0
+  );
 
   const lowPerformers = employees.filter(
-    emp => emp.rank >= maxRank - 2
+    emp => emp.rank >= maxRank - 2 && emp.score > 0
   );
 
   // ================= DEPARTMENT-WISE TOP 3 =================
@@ -278,8 +280,15 @@ if (sortConfig.key) {
       : String(valB).localeCompare(String(valA));
   });
 } else {
-  // Default sorting = by rank
-  displayEmployees.sort((a, b) => a.rank - b.rank);
+  // Default sorting:
+  // 1️⃣ Ranked employees first
+  // 2️⃣ Absent employees (rank === null or score === 0) at bottom
+  displayEmployees.sort((a, b) => {
+    if ((a.rank === null || a.score === 0) && (b.rank === null || b.score === 0)) return 0;
+    if (a.rank === null || a.score === 0) return 1;
+    if (b.rank === null || b.score === 0) return -1;
+    return a.rank - b.rank;
+  });
 }
 
 // ============ GROUPED BAR CHART DATA ==============
@@ -438,7 +447,7 @@ const getDeptColor = (dept) => {
           <td>${emp.name}</td>
           <td>${emp.department}</td>
           <td>${emp.score}</td>
-          <td>#${emp.rank}</td>
+          <td>${emp.rank}</td>
         </tr>
       `);
 
@@ -960,11 +969,11 @@ const getDeptColor = (dept) => {
                 </tr>
               ) : (
                 currentEmployees.map((emp) => {
-                  const isTop = emp.rank <= 3;
-                  const isLow = bottom3Ranks.includes(emp.rank);
+                  const isTop = emp.rank !== null && emp.score > 0 && emp.rank <= 3;
+                  const isLow = emp.rank !== null && emp.score > 0 && bottom3Ranks.includes(emp.rank);
 
-                const rowBg =
-                  isTop ? "#ecfdf5" : isLow ? "#fef2f2" : "transparent";
+                  const rowBg =
+                    isTop ? "#ecfdf5" : isLow ? "#fef2f2" : "transparent";
                   return (
                     <tr key={emp.emp_id} className="performance-row py-1">
                       <td className="text-center" style={{ backgroundColor: rowBg }}>
@@ -990,9 +999,12 @@ const getDeptColor = (dept) => {
                         className="col-rank text-center fw-semibold"
                         style={{ backgroundColor: rowBg }}
                       >
-                        {selectedDept === "all"
-                          ? emp.rank
-                          : departmentRankMap[emp.emp_id]}
+                        {emp.score === 0
+                          ? "—"
+                          : selectedDept === "all"
+                            ? emp.rank
+                            : departmentRankMap[emp.emp_id]
+                        }
                       </td>
                     </tr>
                   );
@@ -1122,7 +1134,7 @@ const getDeptColor = (dept) => {
                       Rank
                     </div>
                     <div className="fw-bold">
-                      #{selectedEmployee.rank}
+                      {selectedEmployee.rank}
                     </div>
                   </div>
                 </div>

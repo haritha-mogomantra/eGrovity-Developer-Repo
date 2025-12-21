@@ -700,6 +700,14 @@ td.col-rank {
    PERFORMANCE DASHBOARD — SCORE RIGHT ALIGN ONLY
    ============================================ */
 
+/* Department column (3rd) – wider for long names */
+.performance-dashboard-table th:nth-child(3),
+.performance-dashboard-table td:nth-child(3) {
+  width: 30%;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .performance-dashboard-table td:nth-child(4),
 .performance-dashboard-table th:nth-child(4) {
   text-align: right !important;

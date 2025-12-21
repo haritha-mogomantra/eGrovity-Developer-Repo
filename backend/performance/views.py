@@ -352,20 +352,24 @@ class PerformanceSummaryView(APIView):
             if dept_name and dept_name.lower() != "all":
                 base_qs = base_qs.filter(department__name=dept_name)
 
-            # ✅ THEN CALCULATE RANK
-            base_qs = base_qs.annotate(
-                full_rank=Window(
-                    expression=DenseRank(),
-                    order_by=F("total_score").desc()
+            # ✅ CALCULATE RANK ONLY FOR PRESENT EMPLOYEES
+            ranked_qs = (
+                base_qs
+                .filter(total_score__gt=0)
+                .annotate(
+                    full_rank=Window(
+                        expression=DenseRank(),
+                        order_by=F("total_score").desc()
+                    )
                 )
             )
 
-
-            # Rank map for injecting final rank into response
-            rank_map = {row["id"]: row["full_rank"] for row in base_qs.values("id", "full_rank")}
+            rank_map = {row["id"]: row["full_rank"] for row in ranked_qs.values("id", "full_rank")}
 
             # Apply search (DO NOT recalculate rank)
-            qs = base_qs
+            qs = base_qs.filter(
+                Q(total_score__gt=0) | Q(total_score__isnull=False)
+            )
             search = request.query_params.get("search", "").strip()
 
             if search:
@@ -447,19 +451,25 @@ class PerformanceSummaryView(APIView):
             if dept_name and dept_name.lower() != "all":
                 base_qs = base_qs.filter(department__name=dept_name)
 
-            # ✅ THEN CALCULATE RANK
-            base_qs = base_qs.annotate(
-                full_rank=Window(
-                    expression=DenseRank(),
-                    order_by=F("total_score").desc()
+            # ✅ CALCULATE RANK ONLY FOR PRESENT EMPLOYEES
+            ranked_qs = (
+                base_qs
+                .filter(total_score__gt=0)
+                .annotate(
+                    full_rank=Window(
+                        expression=DenseRank(),
+                        order_by=F("total_score").desc()
+                    )
                 )
             )
 
-            rank_map = {row["id"]: row["full_rank"] for row in base_qs.values("id", "full_rank")}
+            rank_map = {row["id"]: row["full_rank"] for row in ranked_qs.values("id", "full_rank")}
 
 
             # 4️⃣ Apply search (DO NOT recalc rank)
-            qs = base_qs
+            qs = base_qs.filter(
+                Q(total_score__gt=0) | Q(total_score__isnull=False)
+            )
             search = request.query_params.get("search", "").strip()
 
             if search:
@@ -690,6 +700,7 @@ class PerformanceDashboardView(APIView):
             evaluations = (
                 PerformanceEvaluation.objects
                 .exclude(year=current_year, week_number=current_week)
+                .filter(total_score__gt=0)   # ✅ EXCLUDE ABSENT EMPLOYEES
                 .select_related("employee__user", "department")
             )
             if not evaluations.exists():
