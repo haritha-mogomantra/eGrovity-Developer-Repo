@@ -367,27 +367,21 @@ class PerformanceSummaryView(APIView):
             # Apply search (DO NOT recalculate rank)
             qs = base_qs
             search = request.query_params.get("search", "").strip()
-            ''' if search:
+
+            if search:
+                search = search.lower()
                 qs = qs.filter(
                     Q(employee__user__emp_id__icontains=search) |
                     Q(employee__user__first_name__icontains=search) |
                     Q(employee__user__last_name__icontains=search) |
-                    Q(department__name__icontains=search)
-                )'''
+                    Q(employee__designation__icontains=search) |
+                    Q(employee__project_name__icontains=search) |
+                    Q(employee__department__name__icontains=search) |
+                    Q(employee__manager__user__first_name__icontains=search) |
+                    Q(employee__manager__user__last_name__icontains=search) |
+                    Q(employee__status__icontains=search)
+                )
 
-            search = search.lower()
-
-            qs = qs.filter(
-                Q(employee__user__emp_id__icontains=search) |
-                Q(employee__user__first_name__icontains=search) |
-                Q(employee__user__last_name__icontains=search) |
-                Q(employee__designation__icontains=search) |
-                Q(employee__project_name__icontains=search) |
-                Q(employee__department__name__icontains=search) |
-                Q(employee__manager__user__first_name__icontains=search) |
-                Q(employee__manager__user__last_name__icontains=search) |
-                Q(employee__status__icontains=search)
-            )
 
             # Apply sorting using TRUE rank
             sort_by = request.query_params.get("sort_by")
@@ -467,26 +461,21 @@ class PerformanceSummaryView(APIView):
             # 4️⃣ Apply search (DO NOT recalc rank)
             qs = base_qs
             search = request.query_params.get("search", "").strip()
-            ''' if search:
+
+            if search:
+                search = search.lower()
                 qs = qs.filter(
                     Q(employee__user__emp_id__icontains=search) |
                     Q(employee__user__first_name__icontains=search) |
                     Q(employee__user__last_name__icontains=search) |
-                    Q(department__name__icontains=search)
-                ) '''
-            search = search.lower()
+                    Q(employee__designation__icontains=search) |
+                    Q(employee__project_name__icontains=search) |
+                    Q(employee__department__name__icontains=search) |
+                    Q(employee__manager__user__first_name__icontains=search) |
+                    Q(employee__manager__user__last_name__icontains=search) |
+                    Q(employee__status__icontains=search)
+                )
 
-            qs = qs.filter(
-                Q(employee__user__emp_id__icontains=search) |
-                Q(employee__user__first_name__icontains=search) |
-                Q(employee__user__last_name__icontains=search) |
-                Q(employee__designation__icontains=search) |
-                Q(employee__project_name__icontains=search) |
-                Q(employee__department__name__icontains=search) |
-                Q(employee__manager__user__first_name__icontains=search) |
-                Q(employee__manager__user__last_name__icontains=search) |
-                Q(employee__status__icontains=search)
-            )
 
             # 5️⃣ Sorting using TRUE rank
             sort_by = request.query_params.get("sort_by")

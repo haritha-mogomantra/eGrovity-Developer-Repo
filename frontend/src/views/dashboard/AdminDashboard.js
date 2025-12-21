@@ -133,20 +133,14 @@ function PerformanceDashboard() {
               "Unknown",
             department: item.department_name || "N/A",
             score: item.total_score || 0,
+            rank: item.rank,
             profile_picture: item.profile_picture || "",
             designation: item.designation || "Not Assigned",
           };
         });
 
-        // ✅ GLOBAL RANK CALCULATION (ONCE)
-        const rankedData = [...formatted]
-          .sort((a, b) => b.score - a.score)
-          .map((emp, index) => ({
-            ...emp,
-            rank: index + 1,
-          }));
-
-        setEmployees(rankedData);
+        // ✅ USE BACKEND RANK AS-IS (DO NOT RECALCULATE)
+        setEmployees(formatted);
 
         const uniqueDepartments = [...new Set(formatted.map(emp => emp.department))];
 
@@ -219,14 +213,15 @@ function PerformanceDashboard() {
     return deptMatch && searchMatch;
   });
 
-  // ================= DEPARTMENT-WISE RANK (DERIVED) =================
+  // ================= DEPARTMENT-WISE RANK (STABLE & CORRECT) =================
   const departmentRankMap = {};
 
   if (selectedDept !== "all") {
-    const deptEmployeesSorted = [...filteredEmployees]
+    const deptEmployees = employees
+      .filter(emp => emp.department === selectedDept)
       .sort((a, b) => b.score - a.score);
 
-    deptEmployeesSorted.forEach((emp, index) => {
+    deptEmployees.forEach((emp, index) => {
       departmentRankMap[emp.emp_id] = index + 1;
     });
   }
