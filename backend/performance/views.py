@@ -2,6 +2,7 @@
 # performance/views.py
 # ===========================================================
 from rest_framework import viewsets, permissions, status, filters
+from users.views import is_admin_or_manager
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -135,13 +136,12 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
     # CREATE — Auto Rank Trigger + Notification
     # --------------------------------------------------------
     def create(self, request, *args, **kwargs):
-        role = getattr(request.user, "role", "").lower()
-        if role not in ["admin", "manager"]:
+        if not is_admin_or_manager(request.user):
             return Response(
                 {"error": "Only Admin or Manager can create evaluations."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
+        
         serializer = self.get_serializer(
             data=request.data,
             context={
@@ -314,8 +314,7 @@ class PerformanceSummaryView(APIView):
 
     def get(self, request):
 
-        role = getattr(request.user, "role", "").lower()
-        if role not in ["admin", "manager"]:
+        if not is_admin_or_manager(request.user):
             return Response({"error": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
         
         dept_name = request.query_params.get("department")
@@ -623,8 +622,7 @@ class EmployeePerformanceView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, emp_id):
-        role = getattr(request.user, "role", "").lower()
-        if role not in ["admin", "manager"]:
+        if not is_admin_or_manager(request.user):
             return Response(
                 {"error": "Only Admin or Manager can view this data."},
                 status=status.HTTP_403_FORBIDDEN,

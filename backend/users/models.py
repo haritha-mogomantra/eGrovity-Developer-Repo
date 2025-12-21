@@ -322,13 +322,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         return "Active" if self.is_active else "Inactive"
 
     def is_admin(self):
-        return self.role == "Admin" or self.is_superuser
+        return self.is_superuser or self.role == "admin"
 
     def is_manager(self):
-        return self.role == "Manager"
+        return self.role == "manager"
 
     def is_employee(self):
-        return self.role == "Employee"
+        return self.role == "employee"
 
     # ======================================================
     # ACCOUNT LOCKOUT & LOGIN ATTEMPTS

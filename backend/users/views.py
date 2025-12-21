@@ -39,13 +39,13 @@ User = get_user_model()
 # HELPER PERMISSION FUNCTIONS
 # ===========================================================
 def is_admin(user):
-    return user.is_superuser or getattr(user, "role", "") == "Admin"
+    return user.is_superuser or getattr(user, "role", "").lower() == "admin"
 
 def is_manager(user):
-    return getattr(user, "role", "") == "Manager"
+    return getattr(user, "role", "").lower() == "manager"
 
 def is_admin_or_manager(user):
-    return user.is_superuser or getattr(user, "role", "") in ["Admin", "Manager"]
+    return user.is_superuser or getattr(user, "role", "").lower() in ["admin", "manager"]
 
 
 # ===========================================================

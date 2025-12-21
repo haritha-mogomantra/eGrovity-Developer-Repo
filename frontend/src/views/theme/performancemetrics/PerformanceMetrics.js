@@ -67,8 +67,8 @@ const getUserRole = () => {
     localStorage.getItem("role") ||
     "";
 
-  // normalize to Title Case so it matches backend serializer
-  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+  // normalize to lowercase to match backend & permission checks
+  return role.toLowerCase();
 };
 
 
