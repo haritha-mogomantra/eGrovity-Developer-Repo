@@ -124,7 +124,8 @@ import {
   cilLockLocked     // Employee Credentials
 } from "@coreui/icons";
 
-import { CNavItem } from "@coreui/react";
+import { cilList } from "@coreui/icons";
+import { CNavItem, CNavGroup } from "@coreui/react";
 
 
 // ===============================
@@ -161,6 +162,35 @@ const adminMenu = [
     to: "/reports/weekly",
     icon: <CIcon icon={cilCursor} customClassName="nav-icon" />,
   },
+
+  {
+  component: CNavGroup,
+  name: "Master Modules",
+  icon: <CIcon icon={cilList} customClassName="nav-icon" />,
+  items: [
+    {
+      component: CNavItem,
+      name: "Roles",
+      to: "/masters/roles",
+    },
+    {
+      component: CNavItem,
+      name: "Departments",
+      to: "/masters/departments",
+    },
+    {
+      component: CNavItem,
+      name: "Measurements",
+      to: "/masters/measurements",
+    },
+    {
+      component: CNavItem,
+      name: "Projects",
+      to: "/masters/projects",
+    },
+  ],
+},
+
 ];
 
 // ===============================

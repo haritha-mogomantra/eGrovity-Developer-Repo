@@ -521,12 +521,13 @@ body {
   padding: 12px 20px !important;
 }
 
-/* Primary OK button styling */
+/* Primary OK button styling *
 .modal-footer .btn-primary {
   padding: 6px 22px;
   border-radius: 6px;
   font-weight: 500;
 }
+*/
 
 /* Disable closing modal by clicking outside */
 .modal-static {
@@ -730,4 +731,22 @@ td.col-rank {
 .performance-dashboard-table td:nth-child(5),
 .performance-dashboard-table th:nth-child(5) {
   text-align: center !important;
+}
+
+
+/* ================= MASTER MODULE MODAL – FINAL BUTTON STANDARD ================= */
+
+.master-modal .modal-footer .btn {
+  width: 120px !important;
+  height: 36px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 0 !important;              /* 🔥 kill all padding conflicts */
+  line-height: 1 !important;          /* 🔥 kill font illusion */
+  font-weight: 500 !important;
+
+  box-sizing: border-box !important;
 }

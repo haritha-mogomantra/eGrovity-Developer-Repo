@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "reports",
     "notifications",
     'feedback.apps.FeedbackConfig',
+    "masters",
 ]
 
 # -------------------------------------------------------------------

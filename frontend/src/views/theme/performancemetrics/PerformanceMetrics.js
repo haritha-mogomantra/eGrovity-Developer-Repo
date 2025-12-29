@@ -438,6 +438,24 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
     }
 }, [validationModal.show]);
 
+  // 🔹 Backend error message extractor
+  const extractBackendError = (err) => {
+    const data = err?.response?.data;
+
+    // DRF validation format: { errors: { field: "message" } }
+    if (data?.errors && typeof data.errors === "object") {
+      const firstKey = Object.keys(data.errors)[0];
+      return data.errors[firstKey];
+    }
+
+    if (data?.detail) return data.detail;
+    if (data?.message) return data.message;
+
+    if (typeof data === "string") return data;
+
+    return "Unable to process your request. Please try again.";
+  };
+
   const handleSearch = async () => {
 
     if (!employeeId) {
@@ -805,33 +823,16 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
         });
       }
     } catch (err) {
-      console.error("Submit error:", err.response || err);
+  console.error("Submit error:", err.response || err);
 
-      // Try to extract a meaningful message from backend
-      let serverMsg =
-        err.response?.data?.error ||                         // from create() IntegrityError handler
-        err.response?.data?.message ||                       // if we ever send {"message": "..."}
-        (Array.isArray(err.response?.data?.non_field_errors)
-          ? err.response.data.non_field_errors[0]
-          : null) ||
-        err.response?.data?.detail ||
-        (typeof err.response?.data === "string"
-          ? err.response.data
-          : "") ||
-        err.message ||
-        "Submission failed. Please try again later.";
+  const serverMsg = extractBackendError(err);
 
-      // If the backend says it's a duplicate, mark it as such
-      if (serverMsg.toLowerCase().includes("already exists")) {
-        setDuplicateError(serverMsg);
-      }
-
-      setValidationModal({
-        show: true,
-        message: serverMsg,
-      });
-      return;
-    } finally {
+  setValidationModal({
+    show: true,
+    message: serverMsg,
+  });
+  return;
+} finally {
       setLoading((prev) => ({ ...prev, submit: false }));
     }
   };
@@ -1208,6 +1209,7 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
                       value={viewEmployeeId}
                       readOnly
                       disabled
+                      style={readOnlyStyle}
                     />
                   </div>
                 )}

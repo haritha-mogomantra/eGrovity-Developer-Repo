@@ -3,6 +3,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { Tooltip } from "bootstrap";
+import { useMasters } from "../../../hooks/useMasters";
 
 
 
@@ -10,12 +11,10 @@ function EmployeeTables() {
   const API_URL = "http://127.0.0.1:8000/api/employee/employees/";
   const CSV_UPLOAD_URL = "http://127.0.0.1:8000/api/employee/upload_csv/";
   const MANAGER_LIST_URL = "http://127.0.0.1:8000/api/employee/employees/managers/";
-  const DEPARTMENT_LIST_URL = "http://127.0.0.1:8000/api/employee/departments/";
 
 
   const [employees, setEmployees] = useState([]);
   const [managers, setManagers] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -61,6 +60,13 @@ function EmployeeTables() {
     "Content-Type": "application/json",
   };
 
+  const { masters } = useMasters();
+
+  const departments = masters?.DEPARTMENT || [];
+  const roles = masters?.ROLE || [];
+  const projects = masters?.PROJECT || [];
+  const [filteredProjects, setFilteredProjects] = useState([]);
+
 
   const managerLabel = (m) => {
     return (
@@ -96,27 +102,6 @@ function EmployeeTables() {
     } catch (error) {
       console.error("Error fetching managers:", error);
       setManagers([]);
-    }
-  };
-
-  const fetchDepartments = async () => {
-    try {
-      const res = await fetch(DEPARTMENT_LIST_URL, {
-        headers: authHeaders
-      });
-
-      const data = await res.json();
-
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data.results)
-        ? data.results
-        : [];
-
-      setDepartments(list);
-    } catch (error) {
-      console.error("Error fetching departments:", error);
-      setDepartments([]);
     }
   };
 
@@ -207,10 +192,7 @@ function EmployeeTables() {
         setPageLoading(false);   // ← ADD THIS
     });
     }
-
-    fetchDepartments();
   }, []);
-
 
 
   // When sort changes → always reset to page 1
@@ -262,16 +244,32 @@ function EmployeeTables() {
     }
   }, [alert]);
 
-  // ✅ AUTO-REFRESH MANAGERS WHEN DEPARTMENT CHANGES
+  // ✅ AUTO-REFRESH MANAGERS & PROJECTS WHEN DEPARTMENT CHANGES
   useEffect(() => {
     if (!showModal) return;
 
+    // 🔹 MANAGERS (EXISTING – DO NOT CHANGE)
     if (formData.department_code) {
-      fetchManagers(formData.department_code); // filter by department
+      fetchManagers(formData.department_code);
     } else {
-      fetchManagers(); // load all managers
+      fetchManagers();
     }
-  }, [formData.department_code, showModal]);
+
+    // 🔹 PROJECTS (FILTER USING DEPARTMENT NAME)
+    if (formData.department_code) {
+      const selectedDeptName =
+        departments.find((d) => d.code === formData.department_code)?.name;
+
+      const deptProjects = projects.filter(
+        (p) => p.department_name === selectedDeptName
+      );
+
+      setFilteredProjects(deptProjects);
+    } else {
+      setFilteredProjects(projects);
+    }
+  }, [formData.department_code, showModal, projects]);
+
 
 
   const handleSearchChange = (e) => {
@@ -1396,8 +1394,11 @@ function EmployeeTables() {
                         disabled={mode === "view"}
                       >
                         <option value="">Select Role</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Employee">Employee</option>
+                        {roles.map((role) => (
+                          <option key={role.id} value={role.name}>
+                            {role.name}
+                          </option>
+                        ))}
                       </select>
                       {errors.role && (
                         <div className="invalid-feedback">{errors.role}</div>
@@ -1419,13 +1420,20 @@ function EmployeeTables() {
                     {/* Project */}
                     <div className="col-md-6">
                       <label className="form-label">Project Name</label>
-                      <input
-                        className={`form-control ${mode === "view" ? "view-disabled" : ""}`}
+                      <select
+                        className={`form-select ${mode === "view" ? "view-disabled" : ""}`}
                         name="project_name"
                         value={formData.project_name}
                         onChange={handleInputChange}
-                        readOnly={mode === "view"}
-                      />
+                        disabled={mode === "view"}
+                      >
+                        <option value="">Select Project</option>
+                        {filteredProjects.map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
                     {/* Joining Date */}

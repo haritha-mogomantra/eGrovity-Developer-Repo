@@ -4,6 +4,8 @@ import { CSpinner } from "@coreui/react";
 import "./scss/style.scss";
 import "./scss/examples.scss";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import { MasterDataProvider } from "./context/MasterDataContext";
+
 
 const DefaultLayout = React.lazy(() => import("./layout/DefaultLayout"));
 const Login = React.lazy(() => import("./views/pages/login/Login"));
@@ -67,48 +69,50 @@ const App = () => {
   };
 
   return (
-    <HashRouter>
-      <Suspense
-        fallback={
-          <div className="pt-3 text-center">
-            <CSpinner color="primary" variant="grow" />
-          </div>
-        }
-      >
-        <Routes>
-          {/* ROOT ROUTE - Check if logged in, otherwise go to login */}
-          <Route 
-            path="/" 
-            element={
-              isTokenValid() ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            } 
-          />
+    <MasterDataProvider>
+      <HashRouter>
+        <Suspense
+          fallback={
+            <div className="pt-3 text-center">
+              <CSpinner color="primary" variant="grow" />
+            </div>
+          }
+        >
+          <Routes>
+            {/* ROOT ROUTE */}
+            <Route
+              path="/"
+              element={
+                isTokenValid() ? (
+                  <Navigate to="/dashboard" replace />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
 
-          {/* PUBLIC ROUTES */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/404" element={<Page404 />} />
-          <Route path="/500" element={<Page500 />} />
+            {/* PUBLIC ROUTES */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/404" element={<Page404 />} />
+            <Route path="/500" element={<Page500 />} />
 
-          {/* PROTECTED ROUTES */}
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute allowedRoles={["admin", "manager", "employee"]}>
-                <DefaultLayout />
-              </ProtectedRoute>
-            }
-          />
+            {/* PROTECTED ROUTES */}
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "employee"]}>
+                  <DefaultLayout />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* FALLBACK */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
-    </HashRouter>
+            {/* FALLBACK */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
+      </HashRouter>
+    </MasterDataProvider>
   );
 };
 

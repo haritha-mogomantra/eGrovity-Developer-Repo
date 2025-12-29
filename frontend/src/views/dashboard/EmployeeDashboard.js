@@ -91,6 +91,13 @@ function EmployeeDashboard() {
     }
   };
 
+
+  // ---------------- FETCH LATEST COMPLETED WEEK ----------------
+  const fetchLatestCompletedWeek = async () => {
+    const res = await axiosInstance.get("performance/latest-week/");
+    return res.data; // { week, year }
+  };
+
   // ---------------- CALCULATE CURRENT WEEK ----------------
   const getCurrentWeek = () => {
     const today = new Date();
@@ -110,10 +117,21 @@ function EmployeeDashboard() {
 
     fetchEmployeeInfo();
 
-    const { year, week } = getCurrentWeek();
-    const defaultWeek = `${year}-W${String(week).padStart(2, "0")}`;
-    setSelectedWeek(defaultWeek);
-    fetchPerformance(week, year);
+    const loadLatestWeek = async () => {
+      try {
+        const { week, year } = await fetchLatestCompletedWeek();
+
+        const defaultWeek = `${year}-W${String(week).padStart(2, "0")}`;
+        setSelectedWeek(defaultWeek);
+        fetchPerformance(week, year);
+      } catch (err) {
+        console.error("Latest week fetch error:", err);
+        setError("Unable to determine latest completed week");
+      }
+    };
+
+    loadLatestWeek();
+
   }, [empId]);
 
   // ---------------- WEEK CHANGE HANDLER ----------------

@@ -5,6 +5,7 @@ window.bootstrap = bootstrap;
 import { exportExcel } from "../../utils/exportExcel";
 import { Bar } from "react-chartjs-2";
 import axiosInstance from "../../utils/axiosInstance";
+import { useMasters } from "../../hooks/useMasters";
 import {
   Chart as ChartJS,
   BarElement,
@@ -52,17 +53,19 @@ function PerformanceDashboard() {
   const DEFAULT_PROFILE = "/images/default-profile.png";
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
-  const [departments, setDepartments] = useState([]);
   const [selectedDept, setSelectedDept] = useState("all");
   const [headerEmployee, setHeaderEmployee] = useState(null);
   const [deptColors, setDeptColors] = useState({});
-
-
 
   const loggedInEmpId = localStorage.getItem("emp_id");
   const loggedInName = localStorage.getItem("employee_name");
   const loggedInDept = localStorage.getItem("department");
   const loggedInManager = localStorage.getItem("manager");
+
+  const { masters, loading: mastersLoading } = useMasters();
+
+  const departments = masters?.DEPARTMENT || [];
+
 
 
   useEffect(() => {
@@ -134,29 +137,17 @@ function PerformanceDashboard() {
             department: item.department_name || "N/A",
             score: item.total_score || 0,
             rank: item.rank,
-            profile_picture: item.profile_picture || "",
+            profile_picture:
+              item.profile_picture_url ||
+              item.profile_picture ||
+              localStorage.getItem("profile_picture_url") ||
+              "",
             designation: item.designation || "Not Assigned",
           };
         });
 
         // ✅ USE BACKEND RANK AS-IS (DO NOT RECALCULATE)
         setEmployees(formatted);
-
-        const uniqueDepartments = [...new Set(formatted.map(emp => emp.department))];
-
-        const departmentObjects = uniqueDepartments.map((dept, index) => ({
-          id: index + 1,
-          name: dept
-        }));
-
-        setDepartments(departmentObjects);
-
-        const colors = {};
-        uniqueDepartments.forEach(dept => {
-          colors[dept] = stringToColor(dept); 
-        });
-        setDeptColors(colors);
-
 
       } catch (error) {
         console.error("Dashboard load error:", error);
@@ -171,6 +162,20 @@ function PerformanceDashboard() {
     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
     tooltipTriggerList.forEach(el => new window.bootstrap.Tooltip(el));
   }, []);
+
+
+  useEffect(() => {
+    if (!departments.length) return;
+
+    const colors = {};
+    departments.forEach((dept) => {
+      if (dept?.name) {
+        colors[dept.name] = stringToColor(dept.name);
+      }
+    });
+
+    setDeptColors(colors);
+  }, [departments]);
 
 
   const handleSort = (key) => {
@@ -201,7 +206,9 @@ function PerformanceDashboard() {
   // FILTERING LIKE EMPLOYEE PERFORMANCE
   const filteredEmployees = employees.filter(emp => {
     const deptMatch =
-      selectedDept === "all" ? true : emp.department === selectedDept;
+      selectedDept === "all"
+        ? true
+        : emp.department === selectedDept;
 
     const term = searchTerm.toLowerCase();
 
@@ -386,7 +393,15 @@ const chartData = {
   };
 
 const getDeptColor = (dept) => {
-  const bg = deptColors[dept] || "hsl(0, 0%, 40%)"; // fallback dark gray
+  const bg =
+    deptColors[dept] ||
+    deptColors[
+      Object.keys(deptColors).find(
+        k => k.toLowerCase() === dept.toLowerCase()
+      )
+    ] ||
+    stringToColor(dept);   // FINAL fallback keeps original behavior
+
 
   return {
     backgroundColor: bg,
@@ -796,7 +811,9 @@ const getDeptColor = (dept) => {
             >
               <option value="all">All Departments</option>
               {departments.map(dept => (
-                <option key={dept.id} value={dept.name}>{dept.name}</option>
+                <option key={dept.id || dept.name} value={dept.name}>
+                  {dept.name}
+                </option>
               ))}
             </select>
           </div>

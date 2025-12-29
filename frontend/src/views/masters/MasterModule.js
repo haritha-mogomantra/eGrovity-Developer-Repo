@@ -1,0 +1,892 @@
+import React, { useEffect, useState, useMemo } from "react";
+import { useParams, Navigate } from "react-router-dom";
+import "bootstrap/dist/css/bootstrap.min.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
+import axiosInstance from "../../utils/axiosInstance";
+import { useMasterData } from "../../context/MasterDataContext";
+
+
+
+// ============================================================================
+// LOCAL MASTER API (TEMP – replaces MasterService)
+// ============================================================================
+const MasterAPI = {
+  list: async (
+    masterType,
+    {
+        status = "Active",
+        page = 1,
+        pageSize = 10,
+    } = {}
+    ) => {
+    const params = {
+        master_type: masterType,
+        page,
+        page_size: pageSize,
+    };
+
+    if (status !== "All") params.status = status;
+
+    const res = await axiosInstance.get("/masters/", { params });
+
+    return {
+        results: res.data?.results ?? [],
+        count: res.data?.count ?? 0,
+        totalPages:
+        res.data?.total_pages ??
+        Math.ceil((res.data?.count ?? 0) / pageSize),
+        currentPage: res.data?.current_page ?? page,
+    };
+    },
+
+  create: async (masterType, payload) => {
+    const res = await axiosInstance.post("/masters/", {
+      master_type: masterType,
+      ...payload,
+    });
+    return res.data;
+  },
+
+  update: async (id, payload) => {
+    const res = await axiosInstance.patch(`/masters/${id}/`, payload);
+    return res.data;
+  },
+};
+
+
+// ============================================================================
+// SHARED COMPONENTS
+// ============================================================================
+function PageLayout({ children }) {
+  return <div className="card shadow-sm p-3">{children}</div>;
+}
+
+function AlertMessage({ type, message, onClose }) {
+  if (!message) return null;
+
+  return (
+    <div className={`alert alert-${type} alert-dismissible fade show mb-3`} role="alert">
+      {message}
+      <button className="btn-close" onClick={onClose}></button>
+    </div>
+  );
+}
+
+function TablePanel({
+  data, columns, loading,
+  searchPlaceholder = "Search...",
+  onAddNew, onEdit, onDelete,
+  statusFilter, setStatusFilter
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search) return data;
+    const q = search.toLowerCase();
+    return data.filter((r) =>
+      columns.some((c) => {
+        const v = String(r[c.key] ?? "").toLowerCase();
+        return v.includes(q);
+      })
+    );
+  }, [data, search, columns]);
+
+  return (
+    <>
+      <div className="row mb-3 align-items-center">
+        <div className="col-md-6">
+            <div className="input-group shadow-sm">
+                <span className="input-group-text bg-white border-end-0">
+                <i className="bi bi-search"></i>
+                </span>
+                <input
+                className="form-control border-start-0"
+                placeholder={searchPlaceholder}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                />
+            </div>
+            </div>
+
+        <div className="col-md-6 text-end">
+          {statusFilter && setStatusFilter && (
+            <select
+            className="form-select form-select-sm d-inline-block me-2"
+            style={{ width: "130px" }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            >
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="All">All</option>
+            </select>
+          )}
+
+            <button className="btn btn-outline-secondary btn-sm me-2">
+            <i className="bi bi-arrow-down-up me-1"></i>
+            Sort: Newest
+            </button>
+
+            {onAddNew && (
+              <button
+                className="btn btn-primary btn-sm shadow-sm"
+                onClick={onAddNew}
+              >
+                <i className="bi bi-plus-lg me-1"></i>Add New
+              </button>
+            )}
+        </div>
+        </div>
+
+      <div className="table-responsive">
+        <table
+          className="table align-middle table-hover shadow-sm w-100"
+          style={{
+            borderRadius: "10px",
+            overflow: "hidden",
+            width: "100%",
+            tableLayout: "fixed",
+          }}
+        >
+          <thead
+            style={{
+              background: "#f1f3f5",
+              fontWeight: "600",
+              fontSize: "14px",
+            }}
+          >
+            <tr>
+              {columns.map((c) => (
+                <th
+                  key={c.key}
+                  className="py-3 px-3 text-secondary text-uppercase small text-wrap"
+                >
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-4">
+                  <div className="spinner-border spinner-border-sm text-primary"></div>
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-4 text-muted">
+                  No records found
+                </td>
+              </tr>
+            ) : (
+              filtered.map((row, idx) => (
+                <tr
+                  key={row.id ?? idx}
+                  style={{
+                    background: idx % 2 === 0 ? "#fff" : "#f8f9fa",
+                  }}
+                >
+                  {columns.map((c) => (
+                    <td key={c.key} className="py-3 px-3 text-wrap">
+                      {renderCell(row, c.key, onEdit, onDelete)}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function renderCell(row, key, onEdit, onDelete) {
+  if (key === "status") {
+    const st = row.status || "-";
+    return (
+      <span
+        className={`badge px-3 py-2 rounded-pill ${st === "Active" ? "bg-success" : "bg-secondary"}`}
+      >
+        {st}
+      </span>
+    );
+  }
+
+  if (key === "actions") {
+    return (
+      <div className="d-flex gap-2">
+        {onEdit && (
+          <button
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => onEdit(row)}
+          >
+            <i className="bi bi-pencil"></i>
+          </button>
+        )}
+
+        {onDelete && (
+          <button
+            className={`btn btn-sm ${
+                row.status === "Active"
+                ? "btn-outline-warning"
+                : "btn-outline-success"
+            }`}
+            title={row.status === "Active" ? "Deactivate" : "Activate"}
+            onClick={() => onDelete(row)}
+            >
+            <i
+                className={`bi ${
+                row.status === "Active"
+                    ? "bi-slash-circle"
+                    : "bi-check-circle"
+                }`}
+            ></i>
+            </button>
+        )}
+      </div>
+    );
+  }
+
+    if (key === "managers") {
+      if (!Array.isArray(row.managers) || row.managers.length === 0) {
+        return "-";
+      }
+      return row.managers.join(", ");
+    }
+
+
+  if (key === "created_at") return formatDate(row.created_at);
+  return typeof row[key] === "object"
+    ? JSON.stringify(row[key])
+    : row[key] ?? "-";
+}
+
+function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmentChange }) {
+  const [form, setForm] = useState(initialData || {});
+  const [fieldKey, setFieldKey] = useState(0);
+
+  useEffect(() => {
+    const newForm = initialData || {};
+    setForm(newForm);
+    
+    if (newForm.department_id && onDepartmentChange) {
+        onDepartmentChange(newForm.department_id);
+    }
+    }, [initialData]);
+
+  useEffect(() => {
+    setFieldKey(prev => prev + 1);
+  }, [fields]);
+
+  return (
+    <div
+      className="modal fade show"
+      style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+    >
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content master-modal">
+          <div className="modal-header">
+            <h6 className="modal-title">{title}</h6>
+            <button className="btn-close" onClick={onCancel}></button>
+          </div>
+
+          <div className="modal-body" key={fieldKey}>
+            {fields.map((f) => {
+                if (f.type === "select") {
+                    return (
+                      <select
+                        key={f.key}
+                        className="form-select mb-2"
+                        value={f.key === "managers" ? (form[f.key]?.[0] || "") : (form[f.key] || "")}
+                        onChange={(e) => {
+                            const value = Number(e.target.value);
+                            const updatedForm = {
+                            ...form,
+                            [f.key]: f.key === "managers" ? [value] : value,
+                            };
+
+                            if (f.key === "department_id") {
+                              updatedForm.managers = [];
+                              if (onDepartmentChange) {
+                                  onDepartmentChange(value);
+                              }
+                            }
+
+                            setForm(updatedForm);
+                        }}
+                        >
+                        <option value="">Select {f.label}</option>
+                        {f.options?.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                            </option>
+                        ))}
+                        </select>
+                    );
+                }
+
+                return (
+                    <input
+                    key={f.key}
+                    className="form-control mb-2"
+                    placeholder={f.label}
+                    value={form[f.key] || ""}
+                    onChange={(e) =>
+                        setForm({ ...form, [f.key]: e.target.value })
+                    }
+                    />
+                );
+                })}
+          </div>
+
+          <div className="modal-footer d-flex justify-content-end gap-2">
+            <button
+                className="btn btn-secondary btn-sm master-modal-btn"
+                onClick={onCancel}
+            >
+                Cancel
+            </button>
+
+            <button
+                className="btn btn-primary btn-sm master-modal-btn"
+                onClick={() => onSave(form)}
+            >
+                Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ConfirmDeleteModal({ title, message, onConfirm, onCancel, loading, actionLabel }) {
+  return (
+    <div
+      className="modal fade show"
+      style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+    >
+      <div className="modal-dialog modal-dialog-centered modal-sm">
+        <div className="modal-content">
+          <div className="modal-header">
+            <h6 className="modal-title">{title}</h6>
+            <button className="btn-close" onClick={onCancel}></button>
+          </div>
+
+          <div className="modal-body text-center">
+            <p className="mb-0">{message}</p>
+          </div>
+
+          <div className="modal-footer">
+            <button
+              className="btn btn-secondary btn-sm px-4" style={{ minWidth: "120px" }}
+              onClick={onCancel}
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+                className="btn btn-warning btn-sm px-4"
+                style={{ minWidth: "120px" }}
+                onClick={onConfirm}
+                disabled={loading}
+                >
+                {loading && (
+                    <span className="spinner-border spinner-border-sm me-1"></span>
+                )}
+                {actionLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// GENERIC CRUD PAGE COMPONENT
+// ============================================================================
+function GenericCRUDPage({
+  masterType,
+  columns,
+  formFields,
+  searchPlaceholder,
+  singularName,
+  disableStatus = false,
+  onDepartmentChange
+}) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [alert, setAlert] = useState({ type: "", message: "" });
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("Active");
+
+  const { reloadMasters } = useMasterData();
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+
+
+
+  const loadItems = React.useCallback(async () => {
+    try {
+        setLoading(true);
+        const res = await MasterAPI.list(masterType, {
+            status: disableStatus ? "All" : statusFilter,
+            page: currentPage,
+            pageSize,
+            });
+
+            setItems(res.results);
+            setTotalPages(res.totalPages);
+            setTotalRecords(res.count);
+    } catch (error) {
+        console.error(`Error loading ${masterType}:`, error);
+        setAlert({
+        type: "danger",
+        message: `Failed to load ${masterType.toLowerCase()}`
+        });
+    } finally {
+        setLoading(false);
+    }
+  }, [masterType, statusFilter, currentPage, pageSize]);
+
+
+    useEffect(() => {
+      loadItems();
+    }, [loadItems]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+        }, [statusFilter, pageSize]);
+
+
+  const deleteItem = (row) => {
+    setDeleteTarget(row);
+  };
+
+  const confirmDelete = async () => {
+    try {
+        setDeleteLoading(true);
+
+        const newStatus =
+          deleteTarget?.status === "Active" ? "Inactive" : "Active";
+
+        await MasterAPI.update(deleteTarget.id, { status: newStatus });
+        reloadMasters(true);
+        await loadItems();
+
+        setAlert({
+        type: "success",
+        message: `${singularName} ${
+            newStatus === "Inactive" ? "deactivated" : "activated"
+        } successfully`
+        });
+    } catch (error) {
+        setAlert({
+        type: "danger",
+        message: `Failed to update ${singularName.toLowerCase()} status`
+        });
+    } finally {
+        setDeleteLoading(false);
+        setDeleteTarget(null);
+    }
+  };
+
+
+  const editItemHandler = (row) => {
+    setEditItem(row);
+    setShowForm(true);
+  };
+
+  const saveItem = async (data) => {
+
+    // =====================================================
+    // PROJECT-SPECIFIC FRONTEND VALIDATION
+    // =====================================================
+    if (masterType === "PROJECT") {
+        if (!data.department_id) {
+            setAlert({ type: "danger", message: "Department is required" });
+            return;
+        }
+        if (!Array.isArray(data.managers) || data.managers.length === 0) {
+            setAlert({ type: "danger", message: "Manager is required" });
+            return;
+            }
+      }
+
+
+    try {
+      if (editItem) {
+        await MasterAPI.update(editItem.id, data);
+        reloadMasters(true);
+        await loadItems();
+        setAlert({
+            type: "success",
+            message: `${singularName} updated successfully`
+        });
+        } else {
+        await MasterAPI.create(masterType, data);
+        reloadMasters(true);
+        await loadItems();
+        setAlert({
+            type: "success",
+            message: `${singularName} created successfully`
+        });
+      }
+      setShowForm(false);
+      setEditItem(null);
+    } catch (error) {
+      console.error(`Error saving ${masterType}:`, error);
+      setAlert({
+        type: "danger",
+        message: `Failed to save ${masterType.toLowerCase()}`
+      });
+    }
+  };
+
+  return (
+    <PageLayout>
+      <AlertMessage
+        type={alert.type}
+        message={alert.message}
+        onClose={() => setAlert({ type: "", message: "" })}
+      />
+
+      <TablePanel
+        data={items}
+        columns={columns}
+        loading={loading}
+        searchPlaceholder={searchPlaceholder}
+        onAddNew={() => {
+            setEditItem(null);
+            setShowForm(true);
+        }}
+        onEdit={disableStatus ? null : editItemHandler}
+        onDelete={disableStatus ? null : deleteItem}
+        statusFilter={disableStatus ? null : statusFilter}
+        setStatusFilter={disableStatus ? null : setStatusFilter}
+      />
+
+      {/* Pagination */}
+        {totalRecords > 0 && (
+        <div className="d-flex justify-content-between align-items-center mt-3">
+
+            {/* Left info */}
+            <div className="text-muted">
+            Showing {(currentPage - 1) * pageSize + 1} to{" "}
+            {Math.min(currentPage * pageSize, totalRecords)} of{" "}
+            {totalRecords} records
+            </div>
+
+            {/* Controls */}
+            <div className="d-flex align-items-center gap-2">
+
+            <select
+                className="form-select form-select-sm"
+                style={{ width: "90px" }}
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+            </select>
+
+            <ul className="pagination pagination-sm mb-0">
+
+                <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
+                <button className="page-link" onClick={() => setCurrentPage(1)}>
+                    «
+                </button>
+                </li>
+
+                <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
+                <button
+                    className="page-link"
+                    onClick={() => setCurrentPage((p) => p - 1)}
+                >
+                    ‹
+                </button>
+                </li>
+
+                {[...Array(totalPages)].map((_, i) => {
+                const page = i + 1;
+                return (
+                    <li
+                    key={page}
+                    className={`page-item ${
+                        page === currentPage ? "active" : ""
+                    }`}
+                    >
+                    <button
+                        className="page-link"
+                        onClick={() => setCurrentPage(page)}
+                    >
+                        {page}
+                    </button>
+                    </li>
+                );
+                })}
+
+                <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
+                <button
+                    className="page-link"
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                >
+                    ›
+                </button>
+                </li>
+
+                <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
+                <button
+                    className="page-link"
+                    onClick={() => setCurrentPage(totalPages)}
+                >
+                    »
+                </button>
+                </li>
+
+            </ul>
+            </div>
+        </div>
+        )}
+
+
+      {showForm && (
+        <AddNewModal
+          onDepartmentChange={onDepartmentChange}
+          title={editItem ? `Edit ${singularName}` : `Add ${singularName}`}
+          fields={formFields}
+          initialData={editItem}
+          onSave={saveItem}
+          onCancel={() => {
+            setShowForm(false);
+            setEditItem(null);
+          }}
+        />
+      )}
+
+      {deleteTarget && !disableStatus && (
+        <ConfirmDeleteModal
+          title={
+            deleteTarget?.status === "Active"
+                ? "Confirm Deactivation"
+                : "Confirm Activation"
+            }
+          message={`Are you sure you want to ${
+            deleteTarget?.status === "Active" ? "deactivate" : "activate"
+          } this ${singularName.toLowerCase()}?`}
+          actionLabel={deleteTarget?.status === "Active" ? "Deactivate" : "Activate"}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+          loading={deleteLoading}
+        />
+      )}
+    </PageLayout>
+  );
+}
+
+// ============================================================================
+// PAGE IMPLEMENTATIONS (All Dynamic)
+// ============================================================================
+
+function RolesPage() {
+  return (
+    <GenericCRUDPage
+      masterType="ROLE"
+      singularName="Role"
+      searchPlaceholder="Search roles..."
+      columns={[
+        { key: "name", label: "Role Name" },
+        { key: "created_at", label: "Created On" },
+        { key: "status", label: "Status" },
+        { key: "actions", label: "Actions" },
+      ]}
+      formFields={[
+        { key: "name", label: "Role Name" }
+      ]}
+    />
+  );
+}
+
+function DepartmentsPage() {
+  return (
+    <GenericCRUDPage
+      masterType="DEPARTMENT"
+      singularName="Department"
+      searchPlaceholder="Search departments..."
+      columns={[
+        { key: "name", label: "Department" },
+        { key: "status", label: "Status" },
+        { key: "actions", label: "Actions" },
+      ]}
+      formFields={[
+        { key: "name", label: "Department Name" },
+      ]}
+    />
+  );
+}
+
+function MeasurementsPage() {
+  return (
+    <GenericCRUDPage
+      masterType="METRIC"
+      singularName="Measurement"
+      searchPlaceholder="Search measurements..."
+      columns={[
+        { key: "name", label: "Measurement" },
+        { key: "description", label: "Description" },
+        { key: "status", label: "Status" },
+        { key: "actions", label: "Actions" },
+      ]}
+      formFields={[
+        { key: "name", label: "Measurement Name" },
+        { key: "description", label: "Description" }
+      ]}
+    />
+  );
+}
+
+
+function ProjectsPage() {
+  const { masters } = useMasterData();
+
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [managers, setManagers] = useState([]);
+
+
+  useEffect(() => {
+    axiosInstance
+        .get("/employee/employees/", {
+        params: {
+            role: "Manager",
+            status: "Active",
+        },
+        })
+        .then((res) => {
+          const data = res.data?.results ?? res.data ?? [];
+          setManagers(data);
+        })
+        .catch((err) => {
+          console.error("Error fetching managers:", err);
+          setManagers([]);
+        });
+    }, []);
+
+  const filteredManagers = useMemo(() => {
+    if (!selectedDepartment) {
+        return managers.map((m) => ({
+        id: m.id,
+        name: m.full_name || `${m.user?.first_name || ''} ${m.user?.last_name || ''}`.trim() || 'Unknown'
+        }));
+    }
+
+    const selectedDept = masters.DEPARTMENT?.find(d => d.id === selectedDepartment);
+    const selectedDeptName = selectedDept?.name;
+
+    if (!selectedDeptName) {
+        return [];
+    }
+
+    const filtered = managers
+        .filter((m) => {
+            const deptName = m.department?.name;
+            return deptName === selectedDeptName;
+        })
+        .map((m) => ({
+            id: m.id,
+            name: m.full_name || `${m.user?.first_name || ''} ${m.user?.last_name || ''}`.trim() || 'Unknown'
+        }));
+    
+    return filtered;
+    }, [managers, selectedDepartment, masters.DEPARTMENT]);
+
+  const formFields = useMemo(() => {
+    const fields = [
+      { key: "name", label: "Project Name" },
+      {
+          key: "department_id",
+          label: "Department",
+          type: "select",
+          options: masters.DEPARTMENT || [],
+      },
+      {
+          key: "managers",
+          label: "Manager",
+          type: "select",
+          options: filteredManagers,
+      },
+    ];
+    
+    return fields;
+  }, [masters.DEPARTMENT, filteredManagers]);
+
+
+  return (
+    <GenericCRUDPage
+      masterType="PROJECT"
+      singularName="Project"
+      searchPlaceholder="Search projects..."
+      onDepartmentChange={(deptId) => {
+        const validDeptId = (deptId && !isNaN(deptId)) ? Number(deptId) : null;
+        setSelectedDepartment(validDeptId);
+        }}
+      columns={[
+        { key: "name", label: "Project" },
+        { key: "department_name", label: "Department" },
+        { key: "managers", label: "Manager" },
+        { key: "status", label: "Status" },
+        { key: "actions", label: "Actions" }, 
+        ]}
+      formFields={formFields}
+    />
+  );
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+function formatDate(v) {
+  if (!v) return "-";
+  try {
+    const d = new Date(v);
+    if (isNaN(d)) return v;
+    return d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return v;
+  }
+}
+
+// ============================================================================
+// MAIN ROUTER COMPONENT
+// ============================================================================
+export default function MasterModule() {
+  const { type } = useParams();
+
+  switch (type) {
+    case "roles":
+      return <RolesPage />;
+
+    case "departments":
+      return <DepartmentsPage />;
+
+    case "projects":
+      return <ProjectsPage />;
+
+    case "measurements":
+      return <MeasurementsPage />;
+
+    default:
+      return <Navigate to="/404" replace />;
+  }
+}

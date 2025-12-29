@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from .models import PerformanceEvaluation
 from employee.models import Department, Employee
+from .models import is_latest_completed_week
 
 User = get_user_model()
 
@@ -381,6 +382,18 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
         else:
             self.context["department"] = emp.department
 
+        if self.instance:
+            inst_year = self.instance.year
+            inst_week = self.instance.week_number
+
+            if not is_latest_completed_week(inst_year, inst_week):
+                raise serializers.ValidationError({
+                    "week": (
+                        "Historical performance records are locked "
+                        "and cannot be modified."
+                    )
+                })
+
         # Prevent duplicate evaluations only when creating new record
         if not self.instance:
             week_number = (
@@ -399,13 +412,22 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
                 year = int(year)
             except:
                 raise serializers.ValidationError({"week": "Valid week and year are required."})
+            
+        
+            if not is_latest_completed_week(year, week_number):
+                raise serializers.ValidationError({
+                    "week": (
+                        "Performance can be added or updated "
+                        "only for the most recently completed week."
+                    )
+                })
+
 
             attrs["week_number"] = week_number
             attrs["year"] = year
 
             # Remove week
             attrs.pop("week", None)
-
 
 
             evaluation_type = attrs.get("evaluation_type", "Manager")
@@ -450,6 +472,7 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
         if not self.instance:
             attrs["week_number"] = week_number
             attrs["year"] = year
+
             
         return attrs
 

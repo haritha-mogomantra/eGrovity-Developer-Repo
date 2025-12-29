@@ -29,6 +29,32 @@ def get_week_range(year, week):
     return start, end
 
 
+def get_latest_completed_week():
+    """
+    Returns (year, week_number) for the latest COMPLETED ISO week.
+    Current ongoing week is excluded.
+    """
+    today = date.today()
+    year, week, _ = today.isocalendar()
+
+    # If week > 1 → previous week same year
+    if week > 1:
+        return year, week - 1
+
+    # Week == 1 → go to last ISO week of previous year
+    last_week_prev_year = date(year - 1, 12, 28).isocalendar()[1]
+    return year - 1, last_week_prev_year
+
+
+def is_latest_completed_week(year, week):
+    """
+    Check whether given year/week is the latest completed week.
+    """
+    latest_year, latest_week = get_latest_completed_week()
+    return int(year) == latest_year and int(week) == latest_week
+
+
+
 # -----------------------------------------------------------
 # PERFORMANCE EVALUATION MODEL
 # -----------------------------------------------------------

@@ -68,6 +68,9 @@ const Toasts = React.lazy(() => import('./views/notifications/toasts/Toasts'))
 
 const Widgets = React.lazy(() => import('./views/widgets/Widgets'))
 
+const MasterModule = React.lazy(() => import('./views/masters/MasterModule'))
+
+
 const routes = [
   { path: '/dashboard', name: null, element: Dashboard },
   { path: '/admin-dashboard', name: 'Dashboard', element: AdminDashboard },
@@ -146,6 +149,7 @@ const routes = [
   { path: '/notifications/modals', name: null, element: Modals },
   { path: '/notifications/toasts', name: null, element: Toasts },
   { path: '/widgets', name: null, element: Widgets },
+  { path: '/masters/:type', name: 'Masters', element: MasterModule },
 ]
 
 export default routes

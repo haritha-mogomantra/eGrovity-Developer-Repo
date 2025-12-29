@@ -116,12 +116,26 @@ export default function Login() {
   };
 
   return (
-    <div className="container mt-5 d-flex justify-content-center align-items-center">
+    <div className="container mt-5 d-flex flex-column justify-content-center align-items-center">
+
+      {/* 🔹 eGrovity Logo (OUTSIDE CARD) */}
+      <div className="mb-4">
+        <img
+          src="/images/egrovity-logo.png"
+          alt="eGrovity Logo"
+          style={{
+            height: "48px",
+            objectFit: "contain",
+          }}
+        />
+      </div>
+
       <div
         className="card shadow-lg p-4"
         style={{ width: "400px", borderRadius: "15px" }}
       >
-        <h3 className="text-center mb-4 text-primary">LOGIN</h3>
+        {/* 🔹 Login Title */}
+        <h4 className="text-center fw-semibold mb-4">Login</h4>
 
         {alert.show && (
           <div
