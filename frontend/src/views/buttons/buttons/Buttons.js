@@ -5,10 +5,32 @@ import * as bootstrap from "bootstrap/dist/js/bootstrap.bundle.min.js";
 window.bootstrap = bootstrap;
 import axiosInstance from "../../../utils/axiosInstance";
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useMasterData } from "../../../context/MasterDataContext";
 
 
 function DynamicPerformanceReport() {
   const navigate = useNavigate()
+  const { masters } = useMasterData();
+  const departments = masters?.DEPARTMENT || [];
+
+  // ===============================
+  // Department display helper
+  // ===============================
+  const getDepartmentName = (rawDept) => {
+    if (!rawDept) return "-";
+
+    // If backend already sends plain name, keep it
+    const cleanName = String(rawDept).split("(")[0].trim();
+
+    // Match with master data for safety
+    const masterDept = departments.find(
+      d => d.name?.toLowerCase() === cleanName.toLowerCase()
+    );
+
+    return masterDept ? masterDept.name : cleanName;
+  };
+
+
   const location = useLocation()
 
   const [reportType, setReportType] = useState("weekly");
@@ -154,10 +176,9 @@ function DynamicPerformanceReport() {
 
     useEffect(() => {
       if (reportType === "department") {
-        fetchDepartments();
         setSelectedOption("ALL_DEPT");
         
-        // ✅ Auto-load data for "All Departments" when radio button is clicked
+        // Auto-load data for "All Departments" when radio button is clicked
         const { year, week } = parseWeek(selectedWeek2);
         if (year && week) {
           fetchReport("department", null, "ALL_DEPT", week, year);
@@ -227,7 +248,9 @@ function DynamicPerformanceReport() {
       const normalized = data.records.map((item) => ({
         id: item.emp_id ?? item.id ?? "-",
         name: item.employee_full_name ?? item.full_name ?? item.name ?? "-",
-        department: item.department ?? item.department_name ?? "-",
+        department: getDepartmentName(
+          item.department ?? item.department_name ?? "-"
+        ),
         manager:
           item.manager_full_name ??
           item.manager ??
@@ -494,7 +517,6 @@ function DynamicPerformanceReport() {
   );
 
   const [managers, setManagers] = useState([]);
-  const [departments, setDepartments] = useState([]);
 
   const fetchManagers = async () => {
     try {
@@ -523,37 +545,6 @@ function DynamicPerformanceReport() {
     }
   };
 
-  const fetchDepartments = async () => {
-    try {
-      const res = await axiosInstance.get("employee/departments/");
-      let list = [];
-
-      if (Array.isArray(res.data.results)) {
-        list = res.data.results;
-      }
-
-      else if (Array.isArray(res.data.departments)) {
-        list = res.data.departments;
-      }
-
-      else if (Array.isArray(res.data)) {
-        list = res.data;
-      }
-
-      else if (Array.isArray(res.data.data)) {
-        list = res.data.data;
-      }
-
-      const mappedDepartments = list.map((d) => ({
-        code: d.code || d.id || d.department_code || d.pk,
-        name: d.name || d.title || d.department_name || d.department,
-      }));
-
-      setDepartments(mappedDepartments);
-
-    } catch (error) {
-    }
-  };
 
   const parseEmpId = (id) => {
     if (!id) return 0;
@@ -834,7 +825,7 @@ function DynamicPerformanceReport() {
                     ) : (
                       departments.map((d) => (
                         <option key={d.code} value={d.code}>
-                          {d.name} ({d.code})
+                          {d.name}
                         </option>
                       ))
                     )}
