@@ -5,6 +5,7 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import { CTooltip } from "@coreui/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import axiosInstance from "../../../utils/axiosInstance";
+import { useMasterData } from "../../../context/MasterDataContext";
 
 
 const weekInputStyle = {
@@ -38,6 +39,7 @@ const minWeek = "2000-W01";
 function EmployeePerformance() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { masters } = useMasterData();
 
   const [employees, setEmployees] = useState([]);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
@@ -485,7 +487,16 @@ function EmployeePerformance() {
                     <tr key={emp.id}>
                       <td>{emp.employee_emp_id || emp.emp_id || "-"}</td>
                       <td>{emp.employee_name || emp.full_name || "-"}</td>
-                      <td>{emp.department_name || emp.department || "-"}</td>
+                      <td>
+                        {
+                          masters?.DEPARTMENT?.find(
+                            d =>
+                              d.id === emp.department_id ||
+                              d.name === emp.department ||
+                              d.name === emp.department_name
+                          )?.name || "-"
+                        }
+                      </td>
                       <td>
                         {emp.display_period ||
                         emp.evaluation_period ||

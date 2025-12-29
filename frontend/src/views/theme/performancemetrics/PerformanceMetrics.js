@@ -4,6 +4,8 @@ import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { CTooltip } from "@coreui/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import axiosInstance from "../../../utils/axiosInstance";
+import { useMasterData } from "../../../context/MasterDataContext";
+
 
 const weekInputStyle = {
   fontFamily: "Segoe UI, Arial, sans-serif",
@@ -96,6 +98,7 @@ const PerformanceMetrics = () => {
     search: false,
     submit: false,
     print: false,
+    page: false,
   });
   const [performanceList, setPerformanceList] = useState([]);
   const [successMessage, setSuccessMessage] = useState("");
@@ -109,26 +112,41 @@ const PerformanceMetrics = () => {
   });
 
 
-
-  const [measurements, setMeasurements] = useState([
-    "Communication Skills",
-    "Multi Tasking Abilities",
-    "Team Skills",
-    "Technical Skills",
-    "Job Knowledge",
-    "Productivity",
-    "Creativity",
-    "Work Quality",
-    "Professionalism",
-    "Work Consistency",
-    "Attitude",
-    "Cooperation",
-    "Dependability",
-    "Attendance",
-    "Punctuality",
-  ]);
-
   const navigate = useNavigate();
+  const { masters } = useMasterData();
+
+  // Resolve Department name from Master (single source of truth)
+  const resolveDepartment = (data = {}) =>
+    masters?.DEPARTMENT?.find(
+      d =>
+        d.id === data.department_id ||
+        d.name === data.department_name
+    )?.name || "";
+
+
+  const measurements = (masters?.METRIC || [])
+    .filter(m => m.status === "Active")
+    .sort((a, b) => a.id - b.id)
+    .map(m => m.name);
+
+  // Sync scores & comments length with dynamic measurements
+  useEffect(() => {
+    if (!measurements.length) return;
+
+    setScores(prev =>
+      prev.length === measurements.length
+        ? prev
+        : Array(measurements.length).fill("")
+    );
+
+    setComments(prev =>
+      prev.length === measurements.length
+        ? prev
+        : Array(measurements.length).fill("")
+    );
+  }, [measurements.length]);
+
+
   const printRef = useRef(null);
   const dropdownRef = useRef(null);
   const location = useLocation();
@@ -295,7 +313,7 @@ const PerformanceMetrics = () => {
         employee.full_name ||
         employee.user?.full_name ||
         "",
-      department: employee.department_name || "",
+      department: resolveDepartment(employee),
       manager: employee.manager_name || employee.evaluator_name || "",
       designation: employee.designation || employee.role_name || employee.position || "",
     });
@@ -353,8 +371,8 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
             show: true,
             message: `No evaluation found for this employee in Week ${week}, ${year}.`
           });
-          setScores(Array(15).fill(""));
-          setComments(Array(15).fill(""));
+          setScores(Array(measurements.length).fill(""));
+          setComments(Array(measurements.length).fill(""));
           setLoading((prev) => ({ ...prev, page: false }));
           return;
         }
@@ -363,30 +381,25 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
 
         const metrics = evalData.metrics || {};
 
-        const metricFields = [
-          "communication_skills",
-          "multitasking",
-          "team_skills",
-          "technical_skills",
-          "job_knowledge",
-          "productivity",
-          "creativity",
-          "work_quality",
-          "professionalism",
-          "work_consistency",
-          "attitude",
-          "cooperation",
-          "dependability",
-          "attendance",
-          "punctuality",
-        ];
 
-        // Load scores
-        setScores(metricFields.map(field => metrics[field] ?? ""));
+        setScores(
+          measurements.map(name => {
+            const key = name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, "");
+            return metrics[key] ?? "";
+          })
+        );
 
-        // Load comments
         setComments(
-          metricFields.map(field => metrics[field + "_comment"] ?? "")
+          measurements.map(name => {
+            const key = name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, "");
+            return metrics[key + "_comment"] ?? "";
+          })
         );
 
         setEmployeeData({
@@ -395,10 +408,7 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
             evalData.employee?.user?.full_name ||
             evalData.employee_name ||
             "",
-          department:
-            evalData.employee?.department_name ||
-            evalData.department_name ||
-            "",
+          department: resolveDepartment(evalData.employee || evalData),
           manager:
             evalData.employee?.manager_name ||
             evalData.manager_name ||
@@ -418,8 +428,8 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
           show: true,
           message: "Failed to load evaluation data."
         });
-        setScores(Array(15).fill(""));
-        setComments(Array(15).fill(""));
+        setScores(Array(measurements.length).fill(""));
+        setComments(Array(measurements.length).fill(""));
       } finally {
         setLoading((prev) => ({ ...prev, page: false }));
       }
@@ -436,7 +446,7 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
     } else {
       document.body.style.overflow = "auto";
     }
-}, [validationModal.show]);
+  }, [validationModal.show]);
 
   // 🔹 Backend error message extractor
   const extractBackendError = (err) => {
@@ -470,7 +480,10 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
     const { year, week } = parseWeek(selectedWeek);
 
     if (!year || !week) {
-      setDuplicateError("Please select a valid week before searching.");
+      setValidationModal({
+        show: true,
+        message: "Please select a valid week before searching."
+      });
       setLoading(prev => ({ ...prev, search: false }));
       return;
     }
@@ -483,7 +496,7 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
       setEmployeeId(emp.emp_id);   // <-- FIX: ensures duplicate API receives correct ID
       setEmployeeData({
         name: emp.full_name || "",
-        department: emp.department_name || "",
+        department: resolveDepartment(emp),
         manager: emp.manager_name || "Not Assigned",
       });
 
@@ -711,7 +724,8 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
     }
 
     const allFilled =
-      scores.length === 15 && scores.every((s) => s !== "" && s !== undefined);
+      scores.length === measurements.length &&
+      scores.every((s) => s !== "" && s !== undefined);
     if (!allFilled) {
       setValidationModal({ show: true, message: "Please fill all performance metrics before submitting." });
       return;
@@ -731,25 +745,6 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
       });
       return;
     }
-
-
-    const metricFields = [
-      "communication_skills",
-      "multitasking",
-      "team_skills",
-      "technical_skills",
-      "job_knowledge",
-      "productivity",
-      "creativity",
-      "work_quality",
-      "professionalism",
-      "work_consistency",
-      "attitude",
-      "cooperation",
-      "dependability",
-      "attendance",
-      "punctuality",
-    ];
     
 
     if (!selectedWeek) {
@@ -770,17 +765,23 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
 
 
     const metrics = {};
-    metricFields.forEach((field, idx) => {
-      metrics[field] = Number(scores[idx]);
-    });
-    // add comments
-    metricFields.forEach((field, idx) => {
-      metrics[field + "_comment"] = comments[idx] || "";
+
+    measurements.forEach((name, idx) => {
+      const key = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_|_$/g, "");
+
+      metrics[key] = Number(scores[idx]);
+      metrics[key + "_comment"] = comments[idx] || "";
     });
 
 
     payload.metrics = metrics;
-    payload.total_score = Object.values(metrics).reduce((sum, val) => sum + (val || 0), 0);
+    payload.total_score = scores.reduce(
+      (sum, val) => sum + (Number(val) || 0),
+      0
+    );
 
 
     setLoading((prev) => ({ ...prev, submit: true }));
@@ -1089,7 +1090,7 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
 
                       setEmployeeData({
                         name: emp.full_name || "",
-                        department: emp.department_name || "",
+                        department: resolveDepartment(emp),
                         manager: emp.manager_name || "Not Assigned",
                       });
 

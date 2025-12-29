@@ -41,7 +41,8 @@ export const MasterDataProvider = ({ children }) => {
           ? data.map(item => ({
               id: item.value,
               name: item.label,
-              code: item.code ?? null
+              code: item.code ?? null,
+              status: item.status ?? "Active"
             }))
             : [];
       });

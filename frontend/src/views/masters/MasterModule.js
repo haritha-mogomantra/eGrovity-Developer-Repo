@@ -17,12 +17,14 @@ const MasterAPI = {
         status = "Active",
         page = 1,
         pageSize = 10,
+        ordering = "-created_at",
     } = {}
-    ) => {
+  ) => {
     const params = {
-        master_type: masterType,
-        page,
-        page_size: pageSize,
+      master_type: masterType,
+      page,
+      page_size: pageSize,
+      ordering,
     };
 
     if (status !== "All") params.status = status;
@@ -76,7 +78,9 @@ function TablePanel({
   data, columns, loading,
   searchPlaceholder = "Search...",
   onAddNew, onEdit, onDelete,
-  statusFilter, setStatusFilter
+  statusFilter, setStatusFilter,
+  sortOrder,
+  onToggleSort,
 }) {
   const [search, setSearch] = useState("");
 
@@ -122,9 +126,12 @@ function TablePanel({
             </select>
           )}
 
-            <button className="btn btn-outline-secondary btn-sm me-2">
-            <i className="bi bi-arrow-down-up me-1"></i>
-            Sort: Newest
+            <button
+              className="btn btn-outline-secondary btn-sm me-2"
+              onClick={onToggleSort}
+            >
+              <i className="bi bi-arrow-down-up me-1"></i>
+              Sort: {sortOrder === "desc" ? "Newest" : "Oldest"}
             </button>
 
             {onAddNew && (
@@ -427,6 +434,7 @@ function GenericCRUDPage({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Active");
+  const [sortOrder, setSortOrder] = useState("desc"); // desc = Newest
 
   const { reloadMasters } = useMasterData();
 
@@ -441,10 +449,11 @@ function GenericCRUDPage({
     try {
         setLoading(true);
         const res = await MasterAPI.list(masterType, {
-            status: disableStatus ? "All" : statusFilter,
-            page: currentPage,
-            pageSize,
-            });
+          status: disableStatus ? "All" : statusFilter,
+          page: currentPage,
+          pageSize,
+          ordering: sortOrder === "desc" ? "-created_at" : "created_at",
+        });
 
             setItems(res.results);
             setTotalPages(res.totalPages);
@@ -458,7 +467,7 @@ function GenericCRUDPage({
     } finally {
         setLoading(false);
     }
-  }, [masterType, statusFilter, currentPage, pageSize]);
+  }, [masterType, statusFilter, currentPage, pageSize, sortOrder]);
 
 
     useEffect(() => {
@@ -466,8 +475,8 @@ function GenericCRUDPage({
     }, [loadItems]);
 
     useEffect(() => {
-        setCurrentPage(1);
-        }, [statusFilter, pageSize]);
+      setCurrentPage(1);
+    }, [statusFilter, pageSize, sortOrder]);
 
 
   const deleteItem = (row) => {
@@ -535,14 +544,17 @@ function GenericCRUDPage({
             message: `${singularName} updated successfully`
         });
         } else {
-        await MasterAPI.create(masterType, data);
-        reloadMasters(true);
-        await loadItems();
-        setAlert({
+          await MasterAPI.create(masterType, {
+            ...data,
+            status: "Active",
+          });
+          reloadMasters(true);
+          await loadItems();
+          setAlert({
             type: "success",
             message: `${singularName} created successfully`
-        });
-      }
+          });
+        }
       setShowForm(false);
       setEditItem(null);
     } catch (error) {
@@ -568,13 +580,17 @@ function GenericCRUDPage({
         loading={loading}
         searchPlaceholder={searchPlaceholder}
         onAddNew={() => {
-            setEditItem(null);
-            setShowForm(true);
+          setEditItem(null);
+          setShowForm(true);
         }}
         onEdit={disableStatus ? null : editItemHandler}
         onDelete={disableStatus ? null : deleteItem}
         statusFilter={disableStatus ? null : statusFilter}
         setStatusFilter={disableStatus ? null : setStatusFilter}
+        sortOrder={sortOrder}
+        onToggleSort={() =>
+          setSortOrder((p) => (p === "desc" ? "asc" : "desc"))
+        }
       />
 
       {/* Pagination */}
@@ -745,18 +761,15 @@ function MeasurementsPage() {
       searchPlaceholder="Search measurements..."
       columns={[
         { key: "name", label: "Measurement" },
-        { key: "description", label: "Description" },
         { key: "status", label: "Status" },
         { key: "actions", label: "Actions" },
       ]}
       formFields={[
-        { key: "name", label: "Measurement Name" },
-        { key: "description", label: "Description" }
+        { key: "name", label: "Measurement Name" }
       ]}
     />
   );
 }
-
 
 function ProjectsPage() {
   const { masters } = useMasterData();
