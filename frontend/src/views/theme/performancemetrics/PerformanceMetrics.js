@@ -7,19 +7,16 @@ import axiosInstance from "../../../utils/axiosInstance";
 import { useMasterData } from "../../../context/MasterDataContext";
 
 
-const weekInputStyle = {
-  fontFamily: "Segoe UI, Arial, sans-serif",
-  fontSize: "14px",
-  fontWeight: "400",
-  color: "#212529",
-};
+const formatWeekValue = (year, week) =>
+  `${year}-W${String(week).padStart(2, "0")}`;
+
 
 const readOnlyStyle = {
   backgroundColor: "#e9ecef",
   pointerEvents: "none",
 };
 
-
+/*
 const getISOWeek = (date) => {
   const temp = new Date(date.valueOf());
   const dayNumber = (date.getDay() + 6) % 7;
@@ -33,7 +30,7 @@ const getISOWeek = (date) => {
 
   return `${date.getFullYear()}-W${String(week).padStart(2, "0")}`;
 };
-
+*/
 
 // Format week as "Week 48 (24 Nov - 30 Nov 2025)"
 const formatWeekRange = (weekValue) => {
@@ -77,6 +74,26 @@ const getUserRole = () => {
 
 const PerformanceMetrics = () => {
   const [selectedWeek, setSelectedWeek] = useState("");
+
+  useEffect(() => {
+    if (selectedWeek) return;
+
+    const loadLatestWeek = async () => {
+      try {
+        const res = await axiosInstance.get("/performance/latest-week/");
+        const { week, year } = res.data;
+
+        if (!week || !year) return;
+
+        setSelectedWeek(formatWeekValue(year, week));
+      } catch (err) {
+        console.error("Failed to load latest performance week", err);
+      }
+    };
+
+    loadLatestWeek();
+  }, [selectedWeek]);
+
 
   const [employeeId, setEmployeeId] = useState("");
   const [currentEmployeeId, setCurrentEmployeeId] = useState("");
@@ -267,17 +284,6 @@ const PerformanceMetrics = () => {
 
     fetchPerformanceList();
   }, []);
-
-  const today = new Date();
-  const maxWeek = getISOWeek(today);
-
-  const prevWeek1 = new Date(today);
-  prevWeek1.setDate(today.getDate() - 7);
-
-  const prevWeek2 = new Date(today);
-  prevWeek2.setDate(today.getDate() - 14);
-
-  const minWeek = getISOWeek(prevWeek2);
 
 
   const parseWeek = (weekValue) => {
@@ -1195,8 +1201,8 @@ const empId = employee.user?.emp_id || employee.emp_id || employee.employee_emp_
                       }
                     }
                     }}
-                    min={minWeek}
-                    max={maxWeek}
+                    min="2000-W01"
+                    max={selectedWeek}
                     disabled={false}
                   />
                 </div>

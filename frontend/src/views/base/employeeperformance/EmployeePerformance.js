@@ -15,6 +15,11 @@ const weekInputStyle = {
   color: "#212529",
 };
 
+const formatWeekValue = (year, week) =>
+  `${year}-W${String(week).padStart(2, "0")}`;
+
+
+/*
 const getISOWeek = (date) => {
   const temp = new Date(date.valueOf());
   const dayNumber = (date.getDay() + 6) % 7;
@@ -33,7 +38,7 @@ const today = new Date();
 const maxWeek = getISOWeek(today);
 
 const minWeek = "2000-W01";
-
+*/
 
  
 function EmployeePerformance() {
@@ -53,7 +58,6 @@ function EmployeePerformance() {
   const [visibleCount, setVisibleCount] = useState(0);
   const [selectedWeek, setSelectedWeek] = useState("");
   const [autoWeekLoaded, setAutoWeekLoaded] = useState(false);
-  const [maxSelectableWeek, setMaxSelectableWeek] = useState("");
   const headerRefs = useRef({});
 
 
@@ -64,7 +68,8 @@ function EmployeePerformance() {
       setAutoWeekLoaded(true);
       return;
     }
-    else if (location.state?.selectedWeek) {
+
+    if (location.state?.selectedWeek) {
       setSelectedWeek(location.state.selectedWeek);
       setAutoWeekLoaded(true);
       return;
@@ -72,18 +77,25 @@ function EmployeePerformance() {
 
     if (autoWeekLoaded) return;
 
-    const today = new Date();
-    const lastCompletedWeek = new Date(today);
-    lastCompletedWeek.setDate(today.getDate() - 7);
+    const loadLatestWeek = async () => {
+      try {
+        const res = await axiosInstance.get("/performance/latest-week/");
+        const { week, year } = res.data;
 
-    const formatted = getISOWeek(lastCompletedWeek);
+        if (!week || !year) return;
 
-    setSelectedWeek(formatted);
-    setPage(1);
-    setAutoWeekLoaded(true);
-    setLoading(true);
+        setSelectedWeek(formatWeekValue(year, week));
+        setPage(1);
+        setAutoWeekLoaded(true);
+      } catch (err) {
+        console.error("Failed to load latest performance week", err);
+      }
+    };
 
-  }, [location.state?.returnWeek, autoWeekLoaded]);
+    loadLatestWeek();
+
+  }, [location.state?.returnWeek, location.state?.selectedWeek, autoWeekLoaded]);
+
  
 
   // Fetch Performance Data
@@ -354,7 +366,7 @@ function EmployeePerformance() {
                       setPage(1);
                     }}
                     min="2000-W01"
-                    max={maxWeek}
+                    max={selectedWeek}
                   />
                 </div>
 

@@ -110,8 +110,9 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
 
         # If week provided but year NOT provided → return empty (DO NOT auto-guess)
         if week and not year:
-            return qs.filter(week_number=week, year=timezone.now().year).select_related("employee__user", "department")
-            
+            return qs.filter(week_number=week).select_related(
+                "employee__user", "department"
+            )
             # fallback: filter by week number across years (rare)
             return qs.filter(week_number=week).select_related("employee__user", "department")
 

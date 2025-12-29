@@ -18,8 +18,8 @@ def current_week_number():
 
 
 def current_year():
-    """Return the current year."""
-    return timezone.now().year
+    """Return the current ISO year."""
+    return timezone.now().isocalendar()[0]
 
 
 def get_week_range(year, week):
