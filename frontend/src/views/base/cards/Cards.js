@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import axiosInstance from "../../../utils/axiosInstance";
+import { useMasterData } from "../../../context/MasterDataContext";
+
 
 const LoginDetails = () => {
   const API_URL = "http://127.0.0.1:8000/api/users/login-details/";
@@ -18,6 +20,10 @@ const LoginDetails = () => {
   const [allEmployees, setAllEmployees] = useState([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const headerRefs = useRef({});
+
+    // 🔹 Role Master
+    const { masters } = useMasterData();
+    const roles = masters?.ROLE || [];
 
   const fetchAllEmployees = async () => {
     try {
@@ -273,6 +279,23 @@ const LoginDetails = () => {
   };
 
 
+    // ===============================
+    // Role display helper (Master-based)
+    // ===============================
+    const getRoleName = (rawRole) => {
+      if (!rawRole) return "-";
+
+      const cleanRole = String(rawRole).trim().toLowerCase();
+
+      const matched = roles.find(
+        (r) => r.name?.toLowerCase() === cleanRole
+      );
+
+      return matched ? matched.name : rawRole;
+    };
+
+
+
   // ==================================================
   // RENDER UI
   // ==================================================
@@ -463,7 +486,7 @@ const LoginDetails = () => {
                     <tr key={emp.emp_id}>
                       <td>{emp.emp_id}</td>
                       <td>{emp.full_name || "-"}</td>
-                      <td>{emp.role || "-"}</td>
+                      <td>{getRoleName(emp.role)}</td>
                       <td>{emp.emp_id}</td>
                       <td className="text-start">
                         <input
