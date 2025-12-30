@@ -543,11 +543,18 @@ function EmployeePerformance() {
                   ))
                 ) : (
                   <tr className="empty-state-row">
-                    <td colSpan="7" className="text-center py-5">
-                      <i className="bi bi-inbox" style={{ fontSize: "3rem", color: "#ccc" }}></i>
-                      <p className="mt-3 text-muted mb-0">
-                        No performance records found
-                      </p>
+                    <td colSpan="7" style={{ height: "300px" }}>
+                      <div
+                        className="d-flex flex-column justify-content-center align-items-center h-100"
+                      >
+                        <i
+                          className="bi bi-inbox"
+                          style={{ fontSize: "3rem", color: "#ccc" }}
+                        ></i>
+                        <p className="mt-3 text-muted mb-0">
+                          No performance records found
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 )}

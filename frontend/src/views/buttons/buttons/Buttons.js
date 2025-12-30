@@ -1122,13 +1122,21 @@ function DynamicPerformanceReport() {
                 <tbody>
                   {sortedData.length === 0 ? (
                     <tr className="empty-state-row">
-                      <td colSpan="6" className="empty-state-row">
-                        <div style={{ fontSize: "3rem", color: "#ccc" }}>
-                          <i className="bi bi-inbox"></i>
+                      <td colSpan="6" style={{ height: "300px" }}>
+                        <div
+                          className="d-flex flex-column justify-content-center align-items-center h-100"
+                        >
+                          <i
+                            className="bi bi-inbox"
+                            style={{ fontSize: "3rem", color: "#ccc" }}
+                          ></i>
+                          <p
+                            className="mt-3 text-muted mb-0"
+                            style={{ fontSize: "1.1rem" }}
+                          >
+                            No data available for the selected filters
+                          </p>
                         </div>
-                        <p className="mt-3 text-muted mb-0" style={{ fontSize: "1.1rem" }}>
-                          No data available for the selected filters
-                        </p>
                       </td>
                     </tr>
                   ) : (
