@@ -42,17 +42,28 @@ from .serializers import (
 from datetime import date
 from reports.utils.pdf_generator import generate_employee_performance_pdf
 from notifications.views import create_report_notification 
+from django.db.models import Max
 
 def get_latest_completed_week():
-    today = date.today()
-    year, week, _ = today.isocalendar()
-    week -= 1
+    latest = PerformanceEvaluation.objects.aggregate(
+        max_year=Max("year"),
+    )
 
-    if week == 0:
-        year -= 1
-        week = date(year, 12, 31).isocalendar()[1]
+    if not latest["max_year"]:
+        today = date.today()
+        y, w, _ = today.isocalendar()
+        return y, w - 1
 
-    return year, week
+    max_year = latest["max_year"]
+
+    max_week = (
+        PerformanceEvaluation.objects
+        .filter(year=max_year)
+        .aggregate(max_week=Max("week_number"))["max_week"]
+    )
+
+    return max_year, max_week
+
 
 
 # ===========================================================
@@ -62,10 +73,23 @@ class LatestWeekView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        year, week = get_latest_completed_week()
+        # 1️⃣ Latest COMPLETED week (default selection)
+        latest_year, latest_week = get_latest_completed_week()
+
+        # 2️⃣ Current RUNNING ISO week (max selectable)
+        today = date.today()
+        current_year, current_week, _ = today.isocalendar()
+
         return Response({
-            "year": year,
-            "week": week
+            # Default auto-selected week
+            "latest_year": latest_year,
+            "latest_week": latest_week,
+            "latest_iso_week": f"{latest_year}-W{str(latest_week).zfill(2)}",
+
+            # Max selectable week
+            "current_year": current_year,
+            "current_week": current_week,
+            "current_iso_week": f"{current_year}-W{str(current_week).zfill(2)}",
         }, status=status.HTTP_200_OK)
 
 

@@ -51,9 +51,7 @@ function DynamicPerformanceReport() {
   const [selectedOption, setSelectedOption] = useState("");
 
   const [selectedWeek2, setSelectedWeek2] = useState("");
-  const [maxSelectableWeek, setMaxSelectableWeek] = useState("");
-  const [initialWeek, setInitialWeek] = useState("");
-  const [isWeekChanged, setIsWeekChanged] = useState(false);
+  const [maxWeek, setMaxWeek] = useState("");
 
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [hasManagerInteracted, setHasManagerInteracted] = useState(false);
@@ -83,6 +81,7 @@ function DynamicPerformanceReport() {
     department: "reports/department/"
   };
 
+/*
   const getCurrentWeek = () => {
     const today = new Date();
     const onejan = new Date(today.getFullYear(), 0, 1);
@@ -90,7 +89,7 @@ function DynamicPerformanceReport() {
     const week = Math.ceil((today.getDay() + 1 + numberOfDays) / 7);
     return `${today.getFullYear()}-W${String(week).padStart(2, "0")}`;
   };
-
+*/
     
   useEffect(() => {
     // WAIT until bootstrap is loaded
@@ -114,32 +113,13 @@ function DynamicPerformanceReport() {
       setLoading(true);
 
       try {
-        const storedWeek = localStorage.getItem("selectedWeek");
-
-        if (storedWeek) {
-          setSelectedWeek2(storedWeek);
-          setInitialWeek(storedWeek);
-
-          setHasUserInteracted(true);
-          setIsWeekChanged(true);
-
-          const { year, week } = parseWeek(storedWeek);
-          await fetchReport("weekly", "", "", week, year);
-          setLoading(false);
-          return;
-        }
         const res = await axiosInstance.get("/reports/latest-week/");
 
-        if (res?.data?.week && res?.data?.year) {
-          const backendWeek = `${res.data.year}-W${String(res.data.week).padStart(2, "0")}`;
-          setSelectedWeek2(backendWeek);
+        if (res?.data?.latest_iso_week) {
+          setSelectedWeek2(res.data.latest_iso_week);
+          setMaxWeek(res.data.latest_iso_week);   // ✅ ADD THIS LINE
 
-          setMaxSelectableWeek(getCurrentWeek());
-
-          setInitialWeek(backendWeek);
-          setIsWeekChanged(false);
-
-          const { year, week } = parseWeek(backendWeek);
+          const { year, week } = parseWeek(res.data.latest_iso_week);
           await fetchReport("weekly", "", "", week, year);
         }
 
@@ -155,8 +135,6 @@ function DynamicPerformanceReport() {
     return () => {
       isMounted = false;
 
-      // CLEAR WEEK ONLY WHEN USER LEAVES REPORTS PAGE
-      localStorage.removeItem("selectedWeek");
     };
   }, []);
 
@@ -312,6 +290,23 @@ function DynamicPerformanceReport() {
   };
 
  
+  const handleWeekChange = async (e) => {
+    const value = e.target.value;
+    setSelectedWeek2(value);
+    setHasUserInteracted(true);
+
+    const { year, week } = parseWeek(value);
+    if (!year || !week) return;
+
+    if (reportType === "manager") {
+      await fetchReport("manager", selectedOption, null, week, year);
+    } else if (reportType === "department") {
+      await fetchReport("department", null, selectedOption, week, year);
+    } else {
+      await fetchReport("weekly", null, null, week, year);
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
  
@@ -723,7 +718,6 @@ function DynamicPerformanceReport() {
                     setHasUserInteracted(false);
                     setHasManagerInteracted(false);
                     setHasDepartmentInteracted(false);
-                    setIsWeekChanged(false);
 
                     setSelectedOption(type === "manager" ? "ALL_MGR" :
                                       type === "department" ? "ALL_DEPT" : "");
@@ -758,17 +752,8 @@ function DynamicPerformanceReport() {
                 type="week"
                 className="form-control"
                 value={selectedWeek2}
-                max={maxSelectableWeek}
-                onChange={(e) => {
-                  const value = e.target.value;
-
-                  setSelectedWeek2(value);
-                  localStorage.setItem("selectedWeek", value);
-
-                  setHasUserInteracted(true);
-                  setIsWeekChanged(true);
-
-                }}
+                max={maxWeek}           
+                onChange={handleWeekChange}
               />
             </div>
 

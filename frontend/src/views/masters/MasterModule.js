@@ -424,7 +424,9 @@ function GenericCRUDPage({
   searchPlaceholder,
   singularName,
   disableStatus = false,
-  onDepartmentChange
+  onDepartmentChange,
+  departmentMasters = [],
+  allManagers = []
 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -513,7 +515,32 @@ function GenericCRUDPage({
 
 
   const editItemHandler = (row) => {
-    setEditItem(row);
+    // 🔹 find department id from department_name
+    const dept = departmentMasters.find(
+      d => d.name === row.department_name
+    );
+
+    // 🔹 find manager ids from names
+    const managerIds = Array.isArray(row.managers)
+      ? row.managers
+          .map(name =>
+            allManagers.find(m => {
+              const fullName =
+                m.full_name ||
+                `${m.user?.first_name || ""} ${m.user?.last_name || ""}`.trim();
+              return fullName === name;
+            })?.id
+          )
+          .filter(Boolean)
+      : [];
+
+    const normalized = {
+      ...row,
+      department_id: dept?.id || null,
+      managers: managerIds,
+    };
+
+    setEditItem(normalized);
     setShowForm(true);
   };
 
@@ -862,6 +889,8 @@ function ProjectsPage() {
         { key: "actions", label: "Actions" }, 
         ]}
       formFields={formFields}
+      departmentMasters={masters.DEPARTMENT || []}
+      allManagers={managers}
     />
   );
 }
