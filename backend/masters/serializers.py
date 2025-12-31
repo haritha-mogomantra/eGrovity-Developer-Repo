@@ -149,10 +149,10 @@ class MasterCreateUpdateSerializer(serializers.ModelSerializer):
         if len(value) > 100:
             raise serializers.ValidationError("Name cannot exceed 100 characters")
         
-        if not re.match(r'^[a-zA-Z0-9\s\-_]+$', value):
+        if not re.match(r'^[a-zA-Z0-9\s&\-_\/]+$', value):
             raise serializers.ValidationError(
-                "Name can only contain letters, numbers, spaces, hyphens, and underscores"
-            )
+                "Name can only contain letters, numbers, spaces, &, /, hyphens, and underscores"
+                        )
         
         return value
     
