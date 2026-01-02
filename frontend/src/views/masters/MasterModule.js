@@ -301,54 +301,65 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
           </div>
 
           <div className="modal-body" key={fieldKey}>
-            {fields.map((f) => {
-                if (f.type === "select") {
-                    return (
-                      <select
-                        key={f.key}
-                        className="form-select mb-2"
-                        value={f.key === "managers" ? (form[f.key]?.[0] || "") : (form[f.key] || "")}
-                        onChange={(e) => {
-                          const value = Number(e.target.value);
+            {fields.map((f) => (
+              <div key={f.key} className="mb-3">
+                {/* ✅ LABEL (Always visible in Add/Edit) */}
+                <label className="form-label fw-semibold">
+                  {f.label}
+                </label>
 
-                          const updatedForm = {
-                            ...form,
-                            [f.key]: f.key === "managers" ? (value ? [value] : []) : value,
-                          };
+                {/* ✅ SELECT FIELD */}
+                {f.type === "select" ? (
+                  <select
+                    className="form-select"
+                    value={
+                      f.key === "managers"
+                        ? (form[f.key]?.[0] || "")
+                        : (form[f.key] || "")
+                    }
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
 
-                            if (f.key === "department_id") {
-                              updatedForm.managers = [];
-                              if (onDepartmentChange) {
-                                  onDepartmentChange(value);
-                              }
-                            }
+                      const updatedForm = {
+                        ...form,
+                        [f.key]: f.key === "managers"
+                          ? (value ? [value] : [])
+                          : value,
+                      };
 
-                            setForm(updatedForm);
-                        }}
-                        >
-                        <option value="">--</option>
-                        {f.options?.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                            </option>
-                        ))}
-                        </select>
-                    );
-                }
+                      if (f.key === "department_id") {
+                        updatedForm.managers = [];
+                        if (onDepartmentChange) {
+                          onDepartmentChange(value);
+                        }
+                      }
 
-                return (
-                    <input
-                    key={f.key}
-                    className="form-control mb-2"
+                      setForm(updatedForm);
+                    }}
+                  >
+                    {!initialData && (
+                      <option value="">Select {f.label}</option>
+                    )}
+                    {f.options?.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  /* ✅ INPUT FIELD */
+                  <input
+                    className="form-control"
                     disabled={Boolean(initialData)}
-                    placeholder={f.label}
+                    placeholder={`Enter ${f.label}`}
                     value={form[f.key] || ""}
                     onChange={(e) =>
-                        setForm({ ...form, [f.key]: e.target.value })
+                      setForm({ ...form, [f.key]: e.target.value })
                     }
-                    />
-                );
-                })}
+                  />
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="modal-footer d-flex justify-content-end gap-2">
@@ -428,7 +439,8 @@ function GenericCRUDPage({
   disableStatus = false,
   onDepartmentChange,
   departmentMasters = [],
-  allManagers = []
+  allManagers = [],
+  fetchManagers,
 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -516,10 +528,15 @@ function GenericCRUDPage({
 
 
   const editItemHandler = (row) => {
+    fetchManagers?.(); 
     // 🔹 find department id from department_name
     const dept = departmentMasters.find(
       d => d.name === row.department_name
     );
+
+    if (dept?.id && onDepartmentChange) {
+      onDepartmentChange(dept.id);
+    }
 
     // 🔹 find manager ids from names
     const managerIds = Array.isArray(row.managers)
@@ -603,6 +620,13 @@ function GenericCRUDPage({
         loading={loading}
         searchPlaceholder={searchPlaceholder}
         onAddNew={() => {
+          fetchManagers?.();
+
+          // ✅ RESET department filter for Add mode
+          if (onDepartmentChange) {
+            onDepartmentChange(null);
+          }
+
           setEditItem(null);
           setShowForm(true);
         }}
@@ -794,29 +818,30 @@ function MeasurementsPage() {
 }
 
 function ProjectsPage() {
-  const { masters } = useMasterData();
+  const { masters, reloadMasters } = useMasterData();
 
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [managers, setManagers] = useState([]);
 
+  const fetchManagers = () => {
+    axiosInstance
+      .get("/employee/employees/", {
+        params: {
+          role: "Manager",
+          status: "Active",
+          page_size: 1000, 
+        },
+      })
+      .then((res) => {
+        const data = res.data?.results ?? res.data ?? [];
+        setManagers(data);
+      })
+      .catch(() => setManagers([]));
+  };
 
   useEffect(() => {
-    axiosInstance
-        .get("/employee/employees/", {
-        params: {
-            role: "Manager",
-            status: "Active",
-        },
-        })
-        .then((res) => {
-          const data = res.data?.results ?? res.data ?? [];
-          setManagers(data);
-        })
-        .catch((err) => {
-          console.error("Error fetching managers:", err);
-          setManagers([]);
-        });
-    }, []);
+    fetchManagers();
+  }, []);
 
   const filteredManagers = useMemo(() => {
     if (!selectedDepartment) {
@@ -871,6 +896,7 @@ function ProjectsPage() {
       masterType="PROJECT"
       singularName="Project"
       searchPlaceholder="Search projects..."
+      fetchManagers={fetchManagers}
       onDepartmentChange={(deptId) => {
         const validDeptId = (deptId && !isNaN(deptId)) ? Number(deptId) : null;
         setSelectedDepartment(validDeptId);
