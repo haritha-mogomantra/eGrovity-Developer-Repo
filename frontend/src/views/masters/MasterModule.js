@@ -309,11 +309,12 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
                         className="form-select mb-2"
                         value={f.key === "managers" ? (form[f.key]?.[0] || "") : (form[f.key] || "")}
                         onChange={(e) => {
-                            const value = Number(e.target.value);
-                            const updatedForm = {
+                          const value = Number(e.target.value);
+
+                          const updatedForm = {
                             ...form,
-                            [f.key]: f.key === "managers" ? [value] : value,
-                            };
+                            [f.key]: f.key === "managers" ? (value ? [value] : []) : value,
+                          };
 
                             if (f.key === "department_id") {
                               updatedForm.managers = [];
@@ -325,7 +326,7 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
                             setForm(updatedForm);
                         }}
                         >
-                        <option value="">Select {f.label}</option>
+                        <option value="">--</option>
                         {f.options?.map((opt) => (
                             <option key={opt.id} value={opt.id}>
                             {opt.name}
@@ -339,6 +340,7 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
                     <input
                     key={f.key}
                     className="form-control mb-2"
+                    disabled={Boolean(initialData)}
                     placeholder={f.label}
                     value={form[f.key] || ""}
                     onChange={(e) =>
@@ -358,10 +360,10 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
             </button>
 
             <button
-                className="btn btn-primary btn-sm master-modal-btn"
-                onClick={() => onSave(form)}
+              className="btn btn-primary btn-sm master-modal-btn"
+              onClick={() => onSave(form, { fromModal: true })}
             >
-                Save
+              Save
             </button>
           </div>
         </div>
@@ -444,7 +446,6 @@ function GenericCRUDPage({
   const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
-
 
 
   const loadItems = React.useCallback(async () => {
@@ -544,7 +545,7 @@ function GenericCRUDPage({
     setShowForm(true);
   };
 
-  const saveItem = async (data) => {
+  const saveItem = async (data, meta = {}) => {
 
     // =====================================================
     // PROJECT-SPECIFIC FRONTEND VALIDATION
@@ -554,12 +555,7 @@ function GenericCRUDPage({
             setAlert({ type: "danger", message: "Department is required" });
             return;
         }
-        if (!Array.isArray(data.managers) || data.managers.length === 0) {
-            setAlert({ type: "danger", message: "Manager is required" });
-            return;
-            }
       }
-
 
     try {
       if (editItem) {
@@ -703,7 +699,6 @@ function GenericCRUDPage({
             </div>
         </div>
         )}
-
 
       {showForm && (
         <AddNewModal
@@ -852,24 +847,23 @@ function ProjectsPage() {
     }, [managers, selectedDepartment, masters.DEPARTMENT]);
 
   const formFields = useMemo(() => {
-    const fields = [
+    return [
       { key: "name", label: "Project Name" },
       {
-          key: "department_id",
-          label: "Department",
-          type: "select",
-          options: masters.DEPARTMENT || [],
+        key: "department_id",
+        label: "Department",
+        type: "select",
+        options: masters.DEPARTMENT || [],
       },
       {
-          key: "managers",
-          label: "Manager",
-          type: "select",
-          options: filteredManagers,
+        key: "managers",
+        label: "Manager",
+        type: "select",
+        options: filteredManagers,
       },
     ];
-    
-    return fields;
   }, [masters.DEPARTMENT, filteredManagers]);
+
 
 
   return (

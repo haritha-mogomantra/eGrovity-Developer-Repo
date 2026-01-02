@@ -191,6 +191,14 @@ class MasterViewSet(viewsets.ModelViewSet):
             department_id = self.request.data.get("department_id")
             manager_ids = self.request.data.get("managers")
 
+            # =====================================================
+            # ✅ MANAGER IS MANDATORY FOR PROJECT (BUSINESS RULE)
+            # =====================================================
+            if not manager_ids:
+                raise ValidationError({
+                    "managers": "At least one manager must be assigned to the project"
+                })
+
             project_details, _ = ProjectDetails.objects.get_or_create(
                 project=master
             )
