@@ -13,7 +13,7 @@ from django.utils import timezone
 
 User = get_user_model()
 
-
+'''
 # ===========================================================
 # EMP ID GENERATOR (SHARED & SAFE)
 # ===========================================================
@@ -27,7 +27,7 @@ def generate_emp_id():
         new_number = 1
 
     return f"EMP{str(new_number).zfill(4)}"
-
+'''
 
 # ===========================================================
 # DEPARTMENT SERIALIZER
@@ -229,7 +229,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
-    role = serializers.CharField(write_only=True)
+    emp_id = serializers.CharField(write_only=True, required=True)
     department_code = serializers.CharField(write_only=True, required=False)
     manager = serializers.CharField(write_only=True, required=False, allow_blank=True)
     emp_id = serializers.ReadOnlyField(source="user.emp_id")
@@ -243,7 +243,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            "id", "email", "emp_id", "first_name", "last_name", "role",
+            "id", "email", "emp_id", "first_name", "last_name",
             "contact_number", "department_code", "manager", "designation", "project_name",
             "status", "joining_date",
         ]
@@ -328,7 +328,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        mandatory_fields = ["first_name", "last_name", "email", "role", "department_code", "joining_date"]
+        mandatory_fields = ["first_name", "last_name", "email", "emp_id", "department_code", "joining_date"]
         missing = [f for f in mandatory_fields if not attrs.get(f)]
         if missing:
             raise serializers.ValidationError({
@@ -411,14 +411,15 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             if not manager or not getattr(manager.user, "role", None) in ["Manager", "Admin"]:
                 raise serializers.ValidationError({"manager": "Assigned manager must have role 'Manager' or 'Admin'."})
 
-        new_emp_id = generate_emp_id()
+        admin_emp_id = validated_data.get("emp_id")
+        if not admin_emp_id:
+            raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
 
         user = User.objects.create_user(
-            emp_id=new_emp_id,
+            emp_id=admin_emp_id,
             email=email,
             first_name=first_name,
             last_name=last_name,
-            role=role,
             department=department,
         )
 
@@ -872,14 +873,16 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                             continue
 
                     # 🔟 Create User & Employee
-                    new_emp_id = generate_emp_id()
+                    admin_emp_id = validated_data.get("Emp id")
+
+                    if not admin_emp_id:
+                        raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
 
                     user = User.objects.create_user(
-                        emp_id=new_emp_id,
+                        emp_id=admin_emp_id,
                         email=email,
                         first_name=first_name,
                         last_name=last_name,
-                        role=role,
                         department=department,
                     )
 

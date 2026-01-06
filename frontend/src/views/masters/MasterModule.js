@@ -57,6 +57,54 @@ const MasterAPI = {
 
 
 // ============================================================================
+// EMPLOYEE ROLE ASSIGNMENT API (RBAC)
+// ============================================================================
+const EmployeeRoleAPI = {
+  list: async ({
+    status = "Active",
+    page = 1,
+    pageSize = 10,
+    ordering = "-created_at",
+  } = {}) => {
+    const res = await axiosInstance.get(
+      "/masters/employee-role-assignments/",
+      {
+        params: {
+          status,
+          page,
+          page_size: pageSize,
+          ordering,
+        },
+      }
+    );
+
+    return {
+      results: res.data?.results ?? [],
+      count: res.data?.count ?? 0,
+      totalPages: res.data?.total_pages ?? 1,
+      currentPage: res.data?.current_page ?? page,
+    };
+  },
+
+  create: async (payload) => {
+    const res = await axiosInstance.post(
+      "/masters/employee-role-assignments/",
+      payload
+    );
+    return res.data;
+  },
+
+  update: async (id, payload) => {
+    const res = await axiosInstance.patch(
+      `/masters/employee-role-assignments/${id}/`,
+      payload
+    );
+    return res.data;
+  },
+};
+
+
+// ============================================================================
 // SHARED COMPONENTS
 // ============================================================================
 function PageLayout({ children }) {
@@ -915,6 +963,167 @@ function ProjectsPage() {
   );
 }
 
+
+function EmployeeRoleAssignmentsPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [alert, setAlert] = useState({ type: "", message: "" });
+  const [statusFilter, setStatusFilter] = useState("Active");
+
+  const { masters } = useMasterData();
+  const [employees, setEmployees] = useState([]);
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+
+  const filteredManagers = useMemo(() => {
+    if (!selectedDepartment) return [];
+
+    return employees
+      .filter(
+        e =>
+          e.role === "Manager" &&
+          e.department?.id === selectedDepartment
+      )
+      .map(e => ({
+        id: e.id,
+        name: e.full_name || e.username,
+      }));
+  }, [employees, selectedDepartment]);
+
+  // -------------------------
+  // Load employees
+  // -------------------------
+  useEffect(() => {
+    axiosInstance
+      .get("/employee/employees/", { params: { status: "Active" } })
+      .then((res) => setEmployees(res.data?.results ?? []))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  // -------------------------
+  // Load assignments
+  // -------------------------
+  const loadItems = async () => {
+    try {
+      setLoading(true);
+      const res = await EmployeeRoleAPI.list({ status: statusFilter });
+      setItems(res.results);
+    } catch {
+      setAlert({ type: "danger", message: "Failed to load role assignments" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadItems();
+  }, [statusFilter]);
+
+  // -------------------------
+  // Save
+  // -------------------------
+  const saveItem = async (data) => {
+    try {
+      if (editItem) {
+        await EmployeeRoleAPI.update(editItem.id, data);
+      } else {
+        await EmployeeRoleAPI.create({
+          ...data,
+          status: "Active",
+        });
+      }
+      setAlert({ type: "success", message: "Saved successfully" });
+      setShowForm(false);
+      setEditItem(null);
+      loadItems();
+    } catch {
+      setAlert({ type: "danger", message: "Save failed" });
+    }
+  };
+
+  return (
+    <PageLayout>
+      <AlertMessage
+        type={alert.type}
+        message={alert.message}
+        onClose={() => setAlert({})}
+      />
+
+      <TablePanel
+        data={items}
+        loading={loading}
+        searchPlaceholder="Search role assignments..."
+        columns={[
+          { key: "employee_name", label: "Employee" },
+          { key: "role_name", label: "Role" },
+          { key: "department_name", label: "Department" },
+          { key: "reporting_manager_name", label: "Reporting Manager" },
+          { key: "status", label: "Status" },
+          { key: "actions", label: "Actions" },
+        ]}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        onAddNew={() => setShowForm(true)}
+        onEdit={(row) => {
+          setEditItem({
+            id: row.id,
+            employee: row.employee,
+            role: row.role,
+            department: row.department,
+            reporting_manager: row.reporting_manager,
+          });
+          setSelectedDepartment(row.department);
+          setShowForm(true);
+        }}
+        onDelete={null} 
+      />
+
+      {showForm && (
+        <AddNewModal
+          title={editItem ? "Edit Role Assignment" : "Add Role Assignment"}
+          initialData={editItem}
+          onSave={saveItem}
+          onCancel={() => {
+            setShowForm(false);
+            setEditItem(null);
+          }}
+          onDepartmentChange={(deptId) => setSelectedDepartment(deptId)}
+          fields={[
+            {
+              key: "employee",
+              label: "Employee",
+              type: "select",
+              options: employees.map((e) => ({
+                id: e.id,
+                name: e.full_name || e.username,
+              })),
+            },
+            {
+              key: "role",
+              label: "Role",
+              type: "select",
+              options: masters.ROLE || [],
+            },
+            {
+              key: "department_id",
+              label: "Department",
+              type: "select",
+              options: masters.DEPARTMENT || [],
+            },
+            {
+              key: "reporting_manager",
+              label: "Reporting Manager",
+              type: "select",
+              options: filteredManagers,
+            },
+          ]}
+        />
+      )}
+    </PageLayout>
+  );
+}
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -947,6 +1156,9 @@ export default function MasterModule() {
 
     case "measurements":
       return <MeasurementsPage />;
+
+    case "employee-role-assignments":
+      return <EmployeeRoleAssignmentsPage />;
 
     default:
       return <Navigate to="/404" replace />;

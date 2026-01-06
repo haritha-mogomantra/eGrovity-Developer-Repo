@@ -155,6 +155,40 @@ function EmployeeDashboard() {
   const top3 = sortedMetrics.slice(0, 3);
   const bottom3 = sortedMetrics.slice(-3).reverse();
 
+
+  // ---------------- KPI DERIVATIONS (DYNAMIC) ----------------
+
+  // Engagement Score → average of all metrics
+  const engagementScore =
+    metricList.length > 0
+      ? Math.round(
+          metricList.reduce((sum, m) => sum + (metrics[m] || 0), 0) /
+          metricList.length
+        )
+      : 0;
+
+  // Productivity Rate → average of top 3 metrics
+  const productivityRate =
+    top3.length > 0
+      ? Math.round(top3.reduce((sum, m) => sum + m.score, 0) / top3.length)
+      : 0;
+
+  // Goals Completed → % of metrics >= 80
+  const goalsCompleted =
+    metricList.length > 0
+      ? Math.round(
+          (metricList.filter(m => metrics[m] >= 80).length / metricList.length) *
+          100
+        )
+      : 0;
+
+  // Focus Area → weakest metric mapped to /10
+  const focusAreaScore =
+    bottom3.length > 0
+      ? Math.max(1, Math.round(bottom3[0].score / 10))
+      : 0;
+
+
   // ---------------- CHART CONFIGURATION ----------------
   const chartData = {
     labels: metricList.map(m => m.replace(/_/g, " ").toUpperCase()),
@@ -209,7 +243,7 @@ function EmployeeDashboard() {
   return (
     <div className="container-fluid py-3">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h4 className="mb-0">Employee Performance Dashboard</h4>
+        <h4 className="mb-0">Weekly Performance Trends</h4>
         <div className="d-flex align-items-center gap-2">
           <label htmlFor="week-selector" className="mb-0 text-nowrap">
             Select Week:
@@ -225,7 +259,6 @@ function EmployeeDashboard() {
           />
         </div>
       </div>
-
  
       <div className="card shadow-sm mb-4">
         <div className="card-body">
@@ -293,10 +326,18 @@ function EmployeeDashboard() {
                         key={m.name}
                         className="list-group-item d-flex justify-content-between align-items-center"
                       >
-                        <span>
-                            {idx + 1}. {m.name.replace(/_/g, " ").toUpperCase()}
-                            </span>
-                            <strong>{m.score}</strong>
+                            <div className="w-100">
+                              <div className="d-flex justify-content-between">
+                                <span>{idx + 1}. {m.name.replace(/_/g, " ").toUpperCase()}</span>
+                                <strong>{m.score}%</strong>
+                              </div>
+                              <div className="progress mt-1" style={{ height: "6px" }}>
+                                <div
+                                  className="progress-bar bg-success"
+                                  style={{ width: `${m.score}%` }}
+                                />
+                              </div>
+                            </div>
                       </li>
                     ))
                   ) : (
@@ -318,10 +359,18 @@ function EmployeeDashboard() {
                         key={m.name}
                         className="list-group-item d-flex justify-content-between align-items-center"
                       >
-                        <span>
-                            {sortedMetrics.length - idx}. {m.name.replace(/_/g, " ").toUpperCase()}
-                            </span>
-                            <strong>{m.score}</strong>
+                            <div className="w-100">
+                            <div className="d-flex justify-content-between">
+                              <span>{sortedMetrics.length - idx}. {m.name.replace(/_/g, " ").toUpperCase()}</span>
+                              <strong>{m.score}%</strong>
+                            </div>
+                            <div className="progress mt-1" style={{ height: "6px" }}>
+                              <div
+                                className="progress-bar bg-warning"
+                                style={{ width: `${m.score}%` }}
+                              />
+                            </div>
+                          </div>
                       </li>
                     ))
                   ) : (
@@ -329,6 +378,17 @@ function EmployeeDashboard() {
                   )}
                 </ul>
               </div>
+            </div>
+          </div>
+          {/* ================= MANAGER FEEDBACK ================= */}
+          <div className="card shadow-sm mt-4">
+            <div className="card-header bg-light">
+              <strong>Manager’s Qualitative Feedback</strong>
+            </div>
+            <div className="card-body">
+              <p className="mb-0 text-muted">
+                {performance?.manager_feedback || "—"}
+              </p>
             </div>
           </div>
 

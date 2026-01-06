@@ -64,7 +64,7 @@ class PasswordHistory(models.Model):
 class UserManager(BaseUserManager):
     """Custom user manager handling secure emp_id generation."""
 
-    def generate_emp_id(self):
+    '''def generate_emp_id(self):
         """Generate sequential employee ID (EMP0001, EMP0002...)."""
         with transaction.atomic():
             # This uses the stored emp_id string; ensure numeric parse is guarded.
@@ -77,11 +77,13 @@ class UserManager(BaseUserManager):
                     return f"EMP{num + 1:04d}"
                 except (ValueError, AttributeError):
                     pass
-            return "EMP0001"
+            return "EMP0001"'''
 
     def create_user(self, username=None, password=None, **extra_fields):
         """Create a regular user with secure defaults."""
-        emp_id = extra_fields.get("emp_id") or self.generate_emp_id()
+        emp_id = extra_fields.get("emp_id")
+        if not emp_id:
+            raise ValidationError({"emp_id": "Employee ID is required and must be provided manually."})
         username = username or emp_id
 
         if not password:
@@ -89,8 +91,7 @@ class UserManager(BaseUserManager):
                 length=12,
                 allowed_chars="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
             )
-
-        extra_fields["emp_id"] = emp_id
+            
         extra_fields.setdefault("is_active", True)
 
         user = self.model(username=username, **extra_fields)
@@ -145,9 +146,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     emp_id = models.CharField(
         max_length=50,
         unique=True,
-        editable=False,
         db_index=True,
-        help_text="Auto-generated employee ID (EMP0001, EMP0002, etc.)"
+        help_text="Employee ID entered manually by Admin (e.g., EMP0001)"
     )
     username = models.CharField(max_length=150, unique=True, db_index=True)
     email = models.EmailField(unique=True, db_index=True)

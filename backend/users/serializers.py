@@ -10,18 +10,14 @@ from django.utils.crypto import get_random_string
 from django.core.mail import send_mail              
 from django.conf import settings                
 from django.utils import timezone
-import random
-import string
-import logging
-import re
+import random, string, re
 from datetime import datetime, date
 from employee.models import Department, Employee
-from django.db.models import Max
 from users.views import generate_strong_password
 
 User = get_user_model()
 
-
+'''
 # ===========================================================
 # EMP ID GENERATOR
 # ===========================================================
@@ -40,8 +36,7 @@ def generate_emp_id():
             last_number = 0
 
         return f"EMP{last_number + 1:04d}"
-
-
+'''
 
 # ===========================================================
 # 1. LOGIN SERIALIZER (username / emp_id / email)
@@ -261,7 +256,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             "joining_date",
             "temp_password",
         ]
-        read_only_fields = ["id", "emp_id", "temp_password"]
+        read_only_fields = ["id", "temp_password"]
 
     # ---------------- Computed Fields ----------------
     def get_full_name(self, obj):
@@ -361,8 +356,9 @@ class RegisterSerializer(serializers.ModelSerializer):
                     joining_date=getattr(manager_user, "joining_date", timezone.now().date()),
                 )
 
-        # Generate Emp ID
-        new_emp_id = generate_emp_id()
+        new_emp_id = validated_data.get("emp_id")
+        if not new_emp_id:
+            raise serializers.ValidationError({"emp_id": "Employee ID is required. Auto-generation removed."})
 
         temp_password = generate_strong_password(12)
 
@@ -403,7 +399,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             rep["manager"] = instance.manager.username
         return rep
 
-
+'''
 # ===========================================================
 # 3. CHANGE PASSWORD SERIALIZER (Enhanced)
 # ===========================================================
@@ -442,8 +438,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.force_password_change = False
         user.save(update_fields=["password", "force_password_change"])
         return {"message": "Password changed successfully!"}
-
-
+'''
 # ===========================================================
 # 4. PROFILE SERIALIZER
 # ===========================================================

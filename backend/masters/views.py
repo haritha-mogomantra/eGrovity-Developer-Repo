@@ -18,13 +18,14 @@ from .models import (
     MasterAuditLog,
     MasterType,
     MasterStatus,
-    ProjectDetails
+    ProjectDetails,
+    EmployeeRoleAssignment
 )
 from .serializers import (
     MasterListSerializer, MasterDetailSerializer, 
     MasterCreateUpdateSerializer, MasterStatusUpdateSerializer,
     MasterBulkCreateSerializer, MasterAuditLogSerializer,
-    MasterDropdownSerializer
+    MasterDropdownSerializer, EmployeeRoleAssignmentSerializer
 )
 from .permissions import IsMasterAdmin, IsMasterAdminOrReadOnly
 from .utils import log_master_change
@@ -480,3 +481,38 @@ class MasterViewSet(viewsets.ModelViewSet):
             cache_key = f'masters_dropdown_{master_type}_{status_value.value}'
             cache.delete(cache_key)
 
+
+
+# =====================================================
+# EMPLOYEE ROLE ASSIGNMENT (RBAC MASTER)
+# =====================================================
+
+class EmployeeRoleAssignmentViewSet(viewsets.ModelViewSet):
+    """
+    RBAC Master:
+    Assigns roles to employees.
+    Admin-only write access.
+    """
+
+    queryset = EmployeeRoleAssignment.objects.select_related(
+        "employee",
+        "role",
+        "department",
+        "reporting_manager",
+    )
+    serializer_class = EmployeeRoleAssignmentSerializer
+    permission_classes = [IsAuthenticated, IsMasterAdmin]
+
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["role", "department", "status"]
+    search_fields = [
+        "employee__user__first_name",
+        "employee__user__last_name",
+        "role__name",
+    ]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def perform_update(self, serializer):
+        serializer.save()

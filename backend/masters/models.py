@@ -244,3 +244,70 @@ class ProjectDetails(models.Model):
 
     def __str__(self):
         return f"ProjectDetails({self.project.name})"
+
+
+
+# =====================================================
+# EMPLOYEE ROLE ASSIGNMENT (RBAC MASTER)
+# =====================================================
+
+class EmployeeRoleAssignment(models.Model):
+    """
+    Assigns roles to employees.
+    Single source of truth for RBAC.
+    """
+
+    id = models.AutoField(primary_key=True)
+
+    employee = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.CASCADE,
+        related_name="role_assignments"
+    )
+
+    role = models.ForeignKey(
+        Master,
+        on_delete=models.PROTECT,
+        related_name="employee_role_assignments",
+        limit_choices_to={"master_type": MasterType.ROLE}
+    )
+
+    department = models.ForeignKey(
+        Master,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="employee_role_departments",
+        limit_choices_to={"master_type": MasterType.DEPARTMENT}
+    )
+
+    reporting_manager = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reporting_employees"
+    )
+
+    status = models.CharField(
+        max_length=10,
+        choices=MasterStatus.choices,
+        default=MasterStatus.ACTIVE,
+        db_index=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "employee_role_assignments"
+        ordering = ["-created_at"]
+        unique_together = ("employee", "role")
+        indexes = [
+            models.Index(fields=["employee", "status"]),
+            models.Index(fields=["role", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.employee} → {self.role.name}"
+

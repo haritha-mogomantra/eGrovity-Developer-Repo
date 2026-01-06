@@ -8,7 +8,8 @@ from .models import (
     MasterAuditLog,
     MasterType,
     MasterStatus,
-    ProjectDetails
+    ProjectDetails,
+    EmployeeRoleAssignment
 )
 from django.conf import settings
 import re
@@ -297,3 +298,83 @@ class MasterDropdownSerializer(serializers.ModelSerializer):
     class Meta:
         model = Master
         fields = ['value', 'label', 'code']
+
+
+
+# =====================================================
+# EMPLOYEE ROLE ASSIGNMENT SERIALIZERS (RBAC)
+# =====================================================
+
+class EmployeeRoleAssignmentSerializer(serializers.ModelSerializer):
+    """
+    Admin serializer for assigning roles to employees.
+    """
+
+    employee_name = serializers.SerializerMethodField(read_only=True)
+    role_name = serializers.SerializerMethodField(read_only=True)
+    department_name = serializers.SerializerMethodField(read_only=True)
+    reporting_manager_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = EmployeeRoleAssignment
+        fields = [
+            "id",
+            "employee",
+            "employee_name",
+            "role",
+            "role_name",
+            "department",
+            "department_name",
+            "reporting_manager",
+            "reporting_manager_name",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    # ----------------------------
+    # Display helpers
+    # ----------------------------
+
+    def get_employee_name(self, obj):
+        return obj.employee.get_full_name() or obj.employee.username
+
+    def get_role_name(self, obj):
+        return obj.role.name if obj.role else None
+
+    def get_department_name(self, obj):
+        return obj.department.name if obj.department else None
+
+    def get_reporting_manager_name(self, obj):
+        if obj.reporting_manager:
+            return (
+                obj.reporting_manager.get_full_name()
+                or obj.reporting_manager.username
+            )
+        return None
+
+    # ----------------------------
+    # Business validations
+    # ----------------------------
+
+    def validate(self, attrs):
+        role = attrs.get("role")
+        department = attrs.get("department")
+        reporting_manager = attrs.get("reporting_manager")
+        employee = attrs.get("employee")
+
+        # Manager role requires department
+        if role and role.master_type == MasterType.ROLE:
+            if role.name.lower() == "manager" and not department:
+                raise serializers.ValidationError(
+                    {"department": "Department is required for Manager role"}
+                )
+
+        # Employee cannot report to self
+        if reporting_manager and employee and reporting_manager == employee:
+            raise serializers.ValidationError(
+                {"reporting_manager": "Employee cannot report to themselves"}
+            )
+
+        return attrs
