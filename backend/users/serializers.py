@@ -13,7 +13,7 @@ from django.utils import timezone
 import random, string, re
 from datetime import datetime, date
 from employee.models import Department, Employee
-from users.views import generate_strong_password
+from users.models import generate_strong_password
 
 User = get_user_model()
 
@@ -399,7 +399,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             rep["manager"] = instance.manager.username
         return rep
 
-'''
+
 # ===========================================================
 # 3. CHANGE PASSWORD SERIALIZER (Enhanced)
 # ===========================================================
@@ -438,7 +438,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.force_password_change = False
         user.save(update_fields=["password", "force_password_change"])
         return {"message": "Password changed successfully!"}
-'''
+
 # ===========================================================
 # 4. PROFILE SERIALIZER
 # ===========================================================
