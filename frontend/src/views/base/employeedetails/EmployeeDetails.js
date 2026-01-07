@@ -1375,7 +1375,7 @@ function EmployeeTables() {
 
                         }}
                         readOnly={mode === "view"}
-                        placeholder="Enter EMP ID manually"
+                        // placeholder="Enter EMP ID"
                       />
 
                       {/* HELPER TEXT – ONLY IN ADD MODE */}
@@ -1481,7 +1481,22 @@ function EmployeeTables() {
                         className={`form-select ${mode === "view" ? "view-disabled" : ""} ${errors.department_code ? "is-invalid" : ""}`}
                         name="department_code"
                         value={formData.department_code}
-                        onChange={handleInputChange}   // ✅ only update state
+                        onChange={(e) => {
+                          handleInputChange(e);      // keep existing behavior
+                          const deptCode = e.target.value;
+
+                          // RESET project selection when department changes
+                          setFormData(prev => ({ ...prev, project_name: "" }));
+
+                          // FILTER PROJECTS BASED ON DEPARTMENT
+                          const selectedDeptName = departments.find(d => d.code === deptCode)?.name;
+
+                          const deptProjects = projects.filter(
+                            p => p.department_name === selectedDeptName
+                          );
+
+                          setFilteredProjects(deptProjects);
+                        }}
                         disabled={mode === "view"}
                       >
                         <option value="">Select Department</option>
@@ -1522,7 +1537,7 @@ function EmployeeTables() {
                         disabled={mode === "view"}
                       >
                         <option value="">Select Project</option>
-                        {filteredProjects.map((p) => (
+                        {(formData.department_code ? filteredProjects : projects).map((p) => (
                           <option key={p.id} value={p.name}>
                             {p.name}
                           </option>
