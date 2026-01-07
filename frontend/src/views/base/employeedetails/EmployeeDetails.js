@@ -32,7 +32,6 @@ function EmployeeTables() {
     last_name: "",
     email: "",
     department_code: "",
-    role: "",
     designation: "",
     project_name: "",
     joining_date: "",
@@ -41,6 +40,7 @@ function EmployeeTables() {
 
   const [errors, setErrors] = useState({});
   const [mode, setMode] = useState("add");
+  const [showEmpIdHelper, setShowEmpIdHelper] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const searchTimeoutRef = useRef(null);
@@ -63,7 +63,6 @@ function EmployeeTables() {
   const { masters } = useMasters();
 
   const departments = masters?.DEPARTMENT || [];
-  const roles = masters?.ROLE || [];
   const projects = masters?.PROJECT || [];
   const [filteredProjects, setFilteredProjects] = useState([]);
 
@@ -334,16 +333,16 @@ function EmployeeTables() {
       emp_id: "",
       first_name: "",
       last_name: "",
-      email: "",
+    email: "",
       department_code: "",
-      role: "",
       designation: "",
       project_name: "",
       joining_date: "",
       manager: "",
     });
-    setErrors({});
     setMode("add");
+    setShowEmpIdHelper(true);
+    setErrors({});
     setShowModal(true);
   };
 
@@ -365,7 +364,6 @@ function EmployeeTables() {
         "",
       email: emp.email,
       department_code: emp.department_code || emp.department?.code || "",
-      role: emp.role_name || emp.role || "",
       designation: emp.designation || "",
       project_name: emp.project_name || "",
       joining_date: emp.joining_date || "",
@@ -422,6 +420,49 @@ function EmployeeTables() {
     return re.test(email);
   };
 
+  // ===== INDUSTRY RULE VALIDATION FOR EMPLOYEE ID =====
+  const validateEmpIdFormat = (empId) => {
+    return empId.toUpperCase().startsWith("EMP");
+  };
+
+  // ===== INSTANT EMPLOYEE ID EXISTS CHECK =====
+  const checkEmpIdExists = async (empId) => {
+    try {
+      const res = await fetch(`${API_URL}?search=${empId}`, {
+        headers: authHeaders,
+      });
+
+      const data = await res.json();
+
+      return data.results?.some(
+        (emp) => emp.emp_id.toLowerCase() === empId.toLowerCase()
+      );
+    } catch (error) {
+      console.error("Error checking emp id exists:", error);
+      return false;
+    }
+  };
+
+  // ===== REAL-TIME EMPLOYEE ID DUPLICATE CHECK =====
+  const handleEmpIdRealtimeCheck = async (empIdValue) => {
+    if (!empIdValue.trim()) return;
+
+    const exists = await checkEmpIdExists(empIdValue);
+
+    if (exists) {
+      setErrors((prev) => ({
+        ...prev,
+        emp_id: "Employee ID already in use",
+      }));
+    } else {
+      setErrors((prev) => ({
+        ...prev,
+        emp_id: "",
+      }));
+    }
+  };
+
+
   const handleSave = async () => {
     setLoading(true);
     setErrors({});
@@ -430,10 +471,9 @@ function EmployeeTables() {
     const url = mode === "edit" ? `${API_URL}${formData.emp_id}/` : API_URL;
 
     const payload = { ...formData };
-    delete payload.emp_id;
     delete payload.id;
 
-    const requiredFields = ["first_name", "last_name", "email", "role", "department_code", "joining_date"];
+    const requiredFields = ["emp_id", "first_name", "last_name", "email", "department_code", "joining_date"];
     const newErrors = {};
 
     requiredFields.forEach((field) => {
@@ -523,7 +563,6 @@ function EmployeeTables() {
         last_name: "",
         email: "",
         department_code: "",
-        role: "",
         designation: "",
         project_name: "",
         joining_date: "",
@@ -1301,6 +1340,55 @@ function EmployeeTables() {
 
                 <div className="modal-body">
                   <div className="row g-3">
+                    {/* Emp ID */}
+                    <div className="col-md-6">
+                      <label className="form-label">
+                        Emp ID <span style={{ color: "red" }}>*</span>
+                      </label>
+
+                      <input
+                        className={`form-control ${mode === "view" ? "view-disabled" : ""} ${
+                          errors.emp_id ? "is-invalid" : ""
+                        }`}
+                        name="emp_id"
+                        value={formData.emp_id}
+                        onChange={async (e) => {
+
+                          if (mode !== "view") {
+                            handleInputChange(e);
+                          }
+
+                          const empIdValue = e.target.value.trim();
+
+                          // Helper should vanish while typing
+                          setShowEmpIdHelper(!empIdValue);
+
+                          // Helper should vanish permanently once EMP prefix typed
+                          if (empIdValue.toUpperCase().startsWith("EMP")) {
+                            setShowEmpIdHelper(false);
+                          }
+
+                          // 🔥 NEW: real-time duplicate check
+                          if (mode === "add") {
+                            await handleEmpIdRealtimeCheck(empIdValue);
+                          }
+
+                        }}
+                        readOnly={mode === "view"}
+                        placeholder="Enter EMP ID manually"
+                      />
+
+                      {/* HELPER TEXT – ONLY IN ADD MODE */}
+                      {mode === "add" && showEmpIdHelper && (
+                      <small className="text-muted mt-1 d-block">
+                        Employee ID must start with EMP
+                      </small>
+                    )}
+
+                      {errors.emp_id && (
+                        <div className="invalid-feedback d-block">{errors.emp_id}</div>
+                      )}
+                    </div>
                     {/* First Name */}
                     <div className="col-md-6">
                       <label className="form-label">
@@ -1345,7 +1433,37 @@ function EmployeeTables() {
                         type="email"
                         name="email"
                         value={formData.email}
-                        onChange={handleInputChange}
+                        onChange={async (e) => {
+                          handleInputChange(e);
+
+                          // realtime email duplicate check
+                          if (mode === "add") {
+                            const emailVal = e.target.value.trim();
+
+                            try {
+                              const res = await fetch(`${API_URL}?search=${encodeURIComponent(emailVal)}`, {
+                                headers: authHeaders,
+                              });
+
+                              const data = await res.json();
+
+                              const exists = data.results?.some(
+                                (emp) => emp.user?.email?.toLowerCase() === emailVal.toLowerCase()
+                              );
+
+                              if (exists) {
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  email: "Email already in use",
+                                }));
+                              }
+
+                            } catch (error) {
+                              console.error("Realtime email check failed:", error);
+                            }
+                          }
+
+                        }}
                         readOnly={mode === "view"}
                         placeholder={errors.email || ""}
                       />
@@ -1378,30 +1496,6 @@ function EmployeeTables() {
                         <div className="invalid-feedback">
                           {errors.department_code}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Role */}
-                    <div className="col-md-6">
-                      <label className="form-label">
-                        Role <span style={{ color: "red" }}>*</span>
-                      </label>
-                      <select
-                        className={`form-select ${mode === "view" ? "view-disabled" : ""} ${errors.role ? "is-invalid" : ""}`}
-                        name="role"
-                        value={formData.role}
-                        onChange={handleInputChange}
-                        disabled={mode === "view"}
-                      >
-                        <option value="">Select Role</option>
-                        {roles.map((role) => (
-                          <option key={role.id} value={role.name}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.role && (
-                        <div className="invalid-feedback">{errors.role}</div>
                       )}
                     </div>
 
