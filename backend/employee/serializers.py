@@ -81,11 +81,8 @@ class UserSummarySerializer(serializers.ModelSerializer):
 class EmployeeSerializer(serializers.ModelSerializer):
     user = UserSummarySerializer(read_only=True)
     department = DepartmentSerializer(read_only=True)
-
-    emp_id = serializers.ReadOnlyField(source="user.emp_id")
     full_name = serializers.SerializerMethodField(read_only=True)
     email = serializers.ReadOnlyField(source="user.email")
-    
     role = serializers.SerializerMethodField()
 
     def get_role(self, obj):
@@ -206,8 +203,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         data["status"] = data.get("status") or "Active"
 
         return data
-        
-
 
 
 # ===========================================================
@@ -218,10 +213,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
-    emp_id = serializers.CharField(write_only=True, required=True)
     department_name = serializers.CharField(write_only=True, required=True)
     manager = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    emp_id = serializers.ReadOnlyField(source="user.emp_id")
 
     # Allow multiple joining_date input formats (handles all business cases)
     joining_date = serializers.DateField(
@@ -232,7 +225,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            "id", "email", "emp_id", "first_name", "last_name",
+            "id", "email", "first_name", "last_name",
             "contact_number", "department_name", "manager", "designation", "project_name",
             "status", "joining_date",
         ]
@@ -317,7 +310,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        mandatory_fields = ["first_name", "last_name", "email", "emp_id", "department_name", "joining_date"]
+        mandatory_fields = ["first_name", "last_name", "email", "department_name", "joining_date"]
         missing = [f for f in mandatory_fields if not attrs.get(f)]
         if missing:
             raise serializers.ValidationError({
@@ -362,11 +355,12 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         department = validated_data.pop("department")
+        validated_data.pop("department_name", None)
         manager_emp_id = validated_data.pop("manager", None)
         email = validated_data.pop("email")
         first_name = validated_data.pop("first_name").strip().title()
         last_name = validated_data.pop("last_name").strip().title()
-        role = validated_data.pop("role").title()
+        role = "Employee"
 
         # Allow any role defined in User model dynamically
         valid_roles = [r[1] for r in User.ROLE_CHOICES]  # Uses labels, NOT codes
@@ -374,12 +368,13 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if role not in valid_roles:
             raise serializers.ValidationError({"role": f"Invalid role '{role}'. Allowed roles: {', '.join(valid_roles)}"})
 
-
         if not department:
            raise serializers.ValidationError({"department_name": "Department not found or inactive."})
 
         if not department.is_active:
-            raise serializers.ValidationError({"department_code": f"Department '{department.name}' is inactive."})
+            raise serializers.ValidationError({
+                "department_name": f"Department '{department.name}' is inactive."
+            })
 
         if manager_emp_id in ["", None, "None", "null"]:
             manager_emp_id = None
@@ -390,7 +385,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             if not manager or not getattr(manager.user, "role", None) in ["Manager", "Admin"]:
                 raise serializers.ValidationError({"manager": "Assigned manager must have role 'Manager' or 'Admin'."})
 
-        admin_emp_id = validated_data.get("emp_id")
+        # ✅ emp_id belongs to USER, not Employee
+        admin_emp_id = self.initial_data.get("emp_id")
         if not admin_emp_id:
             raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
 
@@ -402,6 +398,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             department=department,
         )
 
+        validated_data.pop("emp_id", None)
+        
         employee = Employee.objects.create(
             user=user,
             department=department,
@@ -843,7 +841,7 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                             continue
 
                     # 🔟 Create User & Employee
-                    admin_emp_id = validated_data.get("Emp id")
+                    admin_emp_id = row.get("Emp Id") or row.get("Employee Id")
 
                     if not admin_emp_id:
                         raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
