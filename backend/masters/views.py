@@ -388,27 +388,25 @@ class MasterViewSet(viewsets.ModelViewSet):
         # 🔥 PROJECT DROPDOWN NEEDS DEPARTMENT INFO
         # =====================================================
         if master_type.upper() == MasterType.PROJECT:
+            queryset = queryset.filter(
+                master_type__iexact=MasterType.PROJECT,
+                status=MasterStatus.ACTIVE
+            )
+
             project_details_map = {
                 pd.project_id: pd
                 for pd in ProjectDetails.objects.select_related("department")
             }
 
-            data = [
-                {
+            data = []
+            for p in queryset:
+                pd = project_details_map.get(p.id)
+
+                data.append({
                     "id": p.id,
-                    "label": p.name,
-                    "value": p.name,
-                    "department_code": (
-                        project_details_map[p.id].department.code
-                        if p.id in project_details_map else None
-                    ),
-                    "department_name": (
-                        project_details_map[p.id].department.name
-                        if p.id in project_details_map else None
-                    ),
-                }
-                for p in queryset
-            ]
+                    "name": p.name,
+                    "department_name": pd.department.name if pd else None,
+                })
 
             cache.set(cache_key, data, 3600)
             return Response(data)

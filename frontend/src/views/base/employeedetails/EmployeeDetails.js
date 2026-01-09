@@ -15,6 +15,7 @@ function EmployeeTables() {
 
   const [employees, setEmployees] = useState([]);
   const [managers, setManagers] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -31,7 +32,7 @@ function EmployeeTables() {
     first_name: "",
     last_name: "",
     email: "",
-    department_code: "",
+    department_name: "",
     designation: "",
     project_name: "",
     joining_date: "",
@@ -65,6 +66,7 @@ function EmployeeTables() {
   const departments = masters?.DEPARTMENT || [];
   const projects = masters?.PROJECT || [];
   const [filteredProjects, setFilteredProjects] = useState([]);
+  const [projectDropdown, setProjectDropdown] = useState([]);
 
 
   const managerLabel = (m) => {
@@ -75,13 +77,25 @@ function EmployeeTables() {
     );
   };
 
-  const fetchManagers = async (deptCode = "") => {
-    try {
-      const url = deptCode
-        ? `${MANAGER_LIST_URL}?department_code=${deptCode}`
-        : MANAGER_LIST_URL; // ✅ ALL managers if no dept
+  // MAP MANAGER EMP_ID → DEPARTMENT NAME (FROM ALL EMPLOYEES)
+  const managerDepartmentMap = allEmployees.reduce((acc, emp) => {
+    if (emp.emp_id && emp.department_name) {
+      acc[emp.emp_id] = emp.department_name;
+    }
+    return acc;
+  }, {});
 
-      const res = await fetch(url, { headers: authHeaders });
+  // FILTER MANAGERS BASED ON DEPARTMENT (DERIVED FROM EMPLOYEES)
+  const filteredManagers = formData.department_name
+  ? managers.filter(
+      (m) => managerDepartmentMap[m.emp_id] === formData.department_name
+    )
+  : managers;
+
+  
+  const fetchManagers = async () => {
+    try {
+      const res = await fetch(MANAGER_LIST_URL, { headers: authHeaders });
       const data = await res.json();
 
       const list = Array.isArray(data)
@@ -90,14 +104,8 @@ function EmployeeTables() {
         ? data.results
         : [];
 
-      setManagers(
-        list.map((m) => ({
-          emp_id: m.emp_id,
-          full_name:
-            m.full_name ||
-            `${m.user?.first_name || ""} ${m.user?.last_name || ""}`.trim(),
-        }))
-      );
+      // IMPORTANT: keep department_name from backend
+      setManagers(list);
     } catch (error) {
       console.error("Error fetching managers:", error);
       setManagers([]);
@@ -176,19 +184,18 @@ function EmployeeTables() {
     const savedPage = sessionStorage.getItem("emp_page");
     const savedSearch = sessionStorage.getItem("emp_search");
 
-    initialLoadRef.current = true;  // 🔥 begin protected initial load
-
+    initialLoadRef.current = true; 
     if (savedSearch) {
       setSearchTerm(savedSearch);
       setIsSearching(true);
       loadSearchResults(savedPage || 1, savedSearch).finally(() => {
         initialLoadRef.current = false;
-        setPageLoading(false);   // ← ADD THIS
+        setPageLoading(false);
     });
     } else {
       fetchEmployees(savedPage || 1, "").finally(() => {
         initialLoadRef.current = false;
-        setPageLoading(false);   // ← ADD THIS
+        setPageLoading(false);
     });
     }
   }, []);
@@ -203,8 +210,8 @@ function EmployeeTables() {
         ? sortConfig.key
         : "-" + sortConfig.key}`;
 
-      setCurrentPage(1);  // 🔥 reset page
-      fetchEmployees(1, ordering);  // 🔥 reload sorted data from page 1
+      setCurrentPage(1);
+      fetchEmployees(1, ordering);
     }
   }, [sortConfig]);
 
@@ -224,7 +231,7 @@ function EmployeeTables() {
   }, [currentPage]);
 
   useEffect(() => {
-    if (initialLoadRef.current) return;  // 🔥 stop blinking on refresh
+    if (initialLoadRef.current) return;
 
     let ordering = "";
     if (sortConfig.key) {
@@ -243,32 +250,43 @@ function EmployeeTables() {
     }
   }, [alert]);
 
-  // ✅ AUTO-REFRESH MANAGERS & PROJECTS WHEN DEPARTMENT CHANGES
+  // LOAD ALL EMPLOYEES FOR MANAGER FILTERING (ONLY WHEN MODAL OPENS)
   useEffect(() => {
     if (!showModal) return;
 
-    // 🔹 MANAGERS (EXISTING – DO NOT CHANGE)
-    if (formData.department_code) {
-      fetchManagers(formData.department_code);
-    } else {
-      fetchManagers();
+    (async () => {
+      const list = await fetchAllEmployees();
+      setAllEmployees(list);
+    })();
+  }, [showModal]);
+
+  // FETCH MANAGERS ONCE WHEN MODAL OPENS
+  useEffect(() => {
+    if (!showModal) return;
+    fetchManagers();
+  }, [showModal]);
+
+
+  // AUTO-REFRESH MANAGERS & PROJECTS WHEN DEPARTMENT CHANGES
+  useEffect(() => {
+    if (!showModal) return;
+
+    const deptName = formData.department_name;
+
+    // RESET MANAGER SELECTION
+    setFormData(prev => ({ ...prev, manager: "" }));
+
+    // No department → show all projects
+    if (!deptName) {
+      setFilteredProjects(projectDropdown);
+      return;
     }
 
-    // 🔹 PROJECTS (FILTER USING DEPARTMENT NAME)
-    if (formData.department_code) {
-      const selectedDeptName =
-        departments.find((d) => d.code === formData.department_code)?.name;
-
-      const deptProjects = projects.filter(
-        (p) => p.department_name === selectedDeptName
-      );
-
-      setFilteredProjects(deptProjects);
-    } else {
-      setFilteredProjects(projects);
-    }
-  }, [formData.department_code, showModal, projects]);
-
+    // Filter projects by department
+    setFilteredProjects(
+      projectDropdown.filter(p => p.department_name === deptName)
+    );
+  }, [formData.department_name, projectDropdown, showModal]);
 
 
   const handleSearchChange = (e) => {
@@ -326,15 +344,14 @@ function EmployeeTables() {
   };
 
   const handleAdd = () => {
-    fetchManagers([]);
 
     setFormData({
       id: null,
       emp_id: "",
       first_name: "",
       last_name: "",
-    email: "",
-      department_code: "",
+      email: "",
+      department_name: "",
       designation: "",
       project_name: "",
       joining_date: "",
@@ -363,7 +380,7 @@ function EmployeeTables() {
         emp.full_name?.split(" ")[1] ||
         "",
       email: emp.email,
-      department_code: emp.department_code || emp.department?.code || "",
+      department_name: emp.department_name || "",
       designation: emp.designation || "",
       project_name: emp.project_name || "",
       joining_date: emp.joining_date || "",
@@ -394,7 +411,7 @@ function EmployeeTables() {
       // Update UI instantly
       setEmployees((prev) =>
         prev.map((emp) =>
-          emp.emp_id === empId  // 🟢 FIXED: compare using emp.emp_id
+          emp.emp_id === empId
             ? { ...emp, status: "Inactive" }
             : emp
         )
@@ -420,7 +437,7 @@ function EmployeeTables() {
     return re.test(email);
   };
 
-  // ===== INDUSTRY RULE VALIDATION FOR EMPLOYEE ID =====
+  // ===== VALIDATION FOR EMPLOYEE ID =====
   const validateEmpIdFormat = (empId) => {
     return empId.toUpperCase().startsWith("EMP");
   };
@@ -473,7 +490,7 @@ function EmployeeTables() {
     const payload = { ...formData };
     delete payload.id;
 
-    const requiredFields = ["emp_id", "first_name", "last_name", "email", "department_code", "joining_date"];
+    const requiredFields = ["emp_id", "first_name", "last_name", "email", "department_name", "joining_date"];
     const newErrors = {};
 
     requiredFields.forEach((field) => {
@@ -562,7 +579,7 @@ function EmployeeTables() {
         first_name: "",
         last_name: "",
         email: "",
-        department_code: "",
+        department_name: "",
         designation: "",
         project_name: "",
         joining_date: "",
@@ -778,6 +795,28 @@ function EmployeeTables() {
     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
     tooltipTriggerList.forEach((el) => new Tooltip(el));
   }, [employees]);
+
+  // FETCH PROJECTS WITH DEPARTMENT INFO (ONLY WHEN MODAL OPENS)
+  useEffect(() => {
+    if (!showModal) return;
+
+    fetch("http://127.0.0.1:8000/api/masters/dropdown/?type=PROJECT", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setProjectDropdown(list);
+        setFilteredProjects(list);
+      })
+      .catch(() => {
+        setProjectDropdown([]);
+        setFilteredProjects([]);
+      });
+  }, [showModal, token]);
+
 
 
   return (
@@ -1478,38 +1517,28 @@ function EmployeeTables() {
                         Department <span style={{ color: "red" }}>*</span>
                       </label>
                       <select
-                        className={`form-select ${mode === "view" ? "view-disabled" : ""} ${errors.department_code ? "is-invalid" : ""}`}
-                        name="department_code"
-                        value={formData.department_code}
+                        className={`form-select ${mode === "view" ? "view-disabled" : ""} ${errors.department_name ? "is-invalid" : ""}`}
+                        name="department_name"
+                        value={formData.department_name}
                         onChange={(e) => {
-                          handleInputChange(e);      // keep existing behavior
-                          const deptCode = e.target.value;
-
+                          handleInputChange(e);
+                          
                           // RESET project selection when department changes
                           setFormData(prev => ({ ...prev, project_name: "" }));
-
-                          // FILTER PROJECTS BASED ON DEPARTMENT
-                          const selectedDeptName = departments.find(d => d.code === deptCode)?.name;
-
-                          const deptProjects = projects.filter(
-                            p => p.department_name === selectedDeptName
-                          );
-
-                          setFilteredProjects(deptProjects);
                         }}
                         disabled={mode === "view"}
                       >
                         <option value="">Select Department</option>
 
                         {departments.map((dept) => (
-                          <option key={dept.id} value={dept.code}>
+                          <option key={dept.id} value={dept.name}>
                             {dept.name}
                           </option>
                         ))}
                       </select>
-                      {errors.department_code && (
+                      {errors.department_name && (
                         <div className="invalid-feedback">
-                          {errors.department_code}
+                          {errors.department_name}
                         </div>
                       )}
                     </div>
@@ -1537,7 +1566,7 @@ function EmployeeTables() {
                         disabled={mode === "view"}
                       >
                         <option value="">Select Project</option>
-                        {(formData.department_code ? filteredProjects : projects).map((p) => (
+                        {filteredProjects.map((p) => (
                           <option key={p.id} value={p.name}>
                             {p.name}
                           </option>
@@ -1601,7 +1630,7 @@ function EmployeeTables() {
                         disabled={mode === "view"}
                       >
                         <option value="">Select Manager</option>
-                        {managers.map((m) => (
+                        {filteredManagers.map((m) => (
                           <option key={m.emp_id} value={m.emp_id}>
                             {managerLabel(m)}
                           </option>

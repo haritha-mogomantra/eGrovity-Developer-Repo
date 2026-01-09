@@ -294,12 +294,19 @@ class MasterDropdownSerializer(serializers.ModelSerializer):
     """Minimal serializer for dropdown options"""
     label = serializers.CharField(source='name')
     value = serializers.IntegerField(source='id')
-    
+    department_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Master
-        fields = ['value', 'label', 'code']
+        fields = ['value', 'label', 'code', 'department_name']
 
-
+    def get_department_name(self, obj):
+        if obj.master_type != MasterType.PROJECT:
+            return None
+        try:
+            return obj.project_details.department.name
+        except ProjectDetails.DoesNotExist:
+            return None
 
 # =====================================================
 # EMPLOYEE ROLE ASSIGNMENT SERIALIZERS (RBAC)

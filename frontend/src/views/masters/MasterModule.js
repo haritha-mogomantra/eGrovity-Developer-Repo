@@ -27,9 +27,15 @@ const MasterAPI = {
       ordering,
     };
 
+    // OPTIONAL department filter – but only when object actually provides it
+    if (typeof status === "object" && status.department_code) {
+      params.department_code = status.department_code;
+    }
+
     if (status !== "All") params.status = status;
 
     const res = await axiosInstance.get("/masters/", { params });
+
 
     return {
         results: res.data?.results ?? [],
@@ -946,9 +952,24 @@ function ProjectsPage() {
       searchPlaceholder="Search projects..."
       fetchManagers={fetchManagers}
       onDepartmentChange={(deptId) => {
-        const validDeptId = (deptId && !isNaN(deptId)) ? Number(deptId) : null;
+
+        const validDeptId =
+          deptId && !isNaN(deptId) ? Number(deptId) : null;
+
         setSelectedDepartment(validDeptId);
-        }}
+
+        // NEW: reload projects when department changes
+        if (validDeptId) {
+          MasterAPI.list("PROJECT", { department_code: validDeptId })
+            .then(res => setItems(res.results))
+            .catch(err => {
+              console.error("Error filtering projects:", err);
+              setItems([]);
+            });
+        } else {
+          setItems([]);
+        }
+      }}
       columns={[
         { key: "name", label: "Project" },
         { key: "department_name", label: "Department" },
