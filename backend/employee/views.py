@@ -55,11 +55,11 @@ class DefaultPagination(PageNumberPagination):
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all().order_by("name")
     serializer_class = DepartmentSerializer
-    lookup_field = "code"
+    lookup_field = "id"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "description", "code"]
-    ordering_fields = ["name", "created_at", "code"]
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "created_at"]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -158,7 +158,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if department_param:
             dept_qs = Department.objects.filter(
                 Q(name__iexact=department_param)
-                | Q(code__iexact=department_param)
                 | Q(id__iexact=department_param)
             )
             dept = dept_qs.first()
@@ -340,7 +339,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["GET"], url_path="managers")
     def list_managers(self, request):
-        dept_code = request.query_params.get("department_code")
+        dept_name = request.query_params.get("department_name")
 
         managers = Employee.objects.select_related("user", "department").filter(
             Q(user__role__in=["Manager", "Admin"]),
@@ -349,8 +348,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
 
         #FILTER BY DEPARTMENT WHEN PROVIDED
-        if dept_code:
-            managers = managers.filter(department__code=dept_code)
+        if dept_name:
+            managers = managers.filter(department__name__iexact=dept_name)
 
         managers = managers.order_by("user__first_name")
 
@@ -358,7 +357,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             {
                 "emp_id": emp.emp_id,
                 "full_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-                "department": emp.department.code
+                "department": emp.department.name
             }
             for emp in managers
         ], status=status.HTTP_200_OK)
@@ -384,7 +383,6 @@ class AdminProfileView(APIView):
             # Try active department first, fallback to first available
             dept = (
                 Department.objects.filter(name__iexact="Administration").first()
-                or Department.objects.filter(code__iexact="ADMIN").first()
                 or Department.objects.filter(is_active=True).first()
             )
 

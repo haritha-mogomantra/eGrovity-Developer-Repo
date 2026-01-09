@@ -38,7 +38,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = [
-            "id", "code", "name", "description", "is_active",
+            "id", "name", "description", "is_active",
             "employee_count", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at", "employee_count"]
@@ -53,16 +53,6 @@ class DepartmentSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("Department with this name already exists.")
         return value.strip().title()
-
-    def validate_code(self, value):
-        if not value:
-            return value
-        qs = Department.objects.filter(code__iexact=value.strip())
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise serializers.ValidationError("Department code already exists.")
-        return value.strip().upper()
 
     def validate_is_active(self, value):
         if self.instance and not value:
@@ -110,7 +100,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return raw.title() if isinstance(raw, str) else raw
 
     department_name = serializers.ReadOnlyField(source="department.name")
-    department_code = serializers.ReadOnlyField(source="department.code")
     manager_name = serializers.SerializerMethodField(read_only=True)
     manager_emp_id = serializers.CharField(source="manager.user.emp_id", read_only=True)
     team_size = serializers.SerializerMethodField(read_only=True)
@@ -120,7 +109,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "id", "user", "emp_id", "full_name", "email", "contact_number",
-            "department", "department_name", "department_code",
+            "department", "department_name",
             "role", "manager_name", "manager_emp_id",
             "designation", "project_name",
             "status", "joining_date",
@@ -230,7 +219,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
     emp_id = serializers.CharField(write_only=True, required=True)
-    department_code = serializers.CharField(write_only=True, required=False)
+    department_name = serializers.CharField(write_only=True, required=True)
     manager = serializers.CharField(write_only=True, required=False, allow_blank=True)
     emp_id = serializers.ReadOnlyField(source="user.emp_id")
 
@@ -244,7 +233,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "id", "email", "emp_id", "first_name", "last_name",
-            "contact_number", "department_code", "manager", "designation", "project_name",
+            "contact_number", "department_name", "manager", "designation", "project_name",
             "status", "joining_date",
         ]
 
@@ -328,31 +317,26 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        mandatory_fields = ["first_name", "last_name", "email", "emp_id", "department_code", "joining_date"]
+        mandatory_fields = ["first_name", "last_name", "email", "emp_id", "department_name", "joining_date"]
         missing = [f for f in mandatory_fields if not attrs.get(f)]
         if missing:
             raise serializers.ValidationError({
                 "error": f"Missing mandatory fields: {', '.join(missing)}"
             })
 
-        dept_code = attrs.get("department_code")
-        department = None
-        if dept_code:
-            department = Department.objects.filter(
-                models.Q(code__iexact=dept_code) |
-                models.Q(name__iexact=dept_code) |
-                models.Q(id__iexact=dept_code)
-            ).first()
-            if not department:
-                raise serializers.ValidationError({
-                    "department_code": f"Department '{dept_code}' not found."
-                })
-            if not department.is_active:
-                raise serializers.ValidationError({
-                    "department_code": f"Department '{department.name}' is inactive."
-                })
-        if self.instance is None and not attrs.get("department_code"):
-            raise serializers.ValidationError({"department_code": "Department code is required for new employees."})
+        dept_name = attrs.get("department_name")
+
+        department = Department.objects.filter(
+            name__iexact=dept_name,
+            is_active=True
+        ).first()
+
+        if not department:
+            raise serializers.ValidationError({
+                "department_name": f"Department '{dept_name}' not found or inactive."
+            })
+
+        attrs["department"] = department
 
         email = attrs.get("email")
         if email and User.objects.filter(email__iexact=email).exclude(id=getattr(self.instance, "user_id", None)).exists():
@@ -377,7 +361,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        dept_code = validated_data.pop("department_code", None)
+        department = validated_data.pop("department")
         manager_emp_id = validated_data.pop("manager", None)
         email = validated_data.pop("email")
         first_name = validated_data.pop("first_name").strip().title()
@@ -391,14 +375,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"role": f"Invalid role '{role}'. Allowed roles: {', '.join(valid_roles)}"})
 
 
-        if not dept_code:
-            raise serializers.ValidationError({"department_code": "Department code is required."})
-
-        department = Department.objects.filter(
-            models.Q(code__iexact=dept_code) | models.Q(name__iexact=dept_code) | models.Q(id__iexact=dept_code)
-        ).first()
         if not department:
-            raise serializers.ValidationError({"department_code": f"Department '{dept_code}' not found."})
+           raise serializers.ValidationError({"department_name": "Department not found or inactive."})
+
         if not department.is_active:
             raise serializers.ValidationError({"department_code": f"Department '{department.name}' is inactive."})
 
@@ -434,16 +413,11 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        department_code = validated_data.pop("department_code", None)
+        department = validated_data.pop("department", None)
         manager_emp_id = validated_data.pop("manager", None)
         role = validated_data.get("role", instance.role).title()
 
-        if department_code:
-            department = Department.objects.filter(
-                models.Q(code__iexact=department_code) | models.Q(name__iexact=department_code)
-            ).first()
-            if not department:
-                raise serializers.ValidationError({"department_code": f"Department '{department_code}' not found."})
+        if department:
             instance.department = department
 
         if manager_emp_id and manager_emp_id.strip():
@@ -510,7 +484,6 @@ class AdminProfileSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField(source="user.last_name", required=False)
     email = serializers.EmailField(source="user.email", required=False)
     department = serializers.CharField(source="department.name", read_only=True)
-    department_code = serializers.ReadOnlyField(source="department.code")
     role = serializers.CharField(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
 
@@ -518,7 +491,7 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "emp_id", "first_name", "last_name", "email", "role",
-            "department", "department_code", "designation", "project_name", "joining_date", "status",
+            "department", "designation", "project_name", "joining_date", "status",
             "contact_number", "gender", "dob", 
             "profile_picture", "profile_picture_url",
             "address_line1", "address_line2", "city", "state", "pincode",
@@ -562,7 +535,6 @@ class AdminProfileSerializer(serializers.ModelSerializer):
             },
             "professional": {
                 "department": d.get("department"),
-                "department_code": d.get("department_code"),
                 "role": d.get("role"),
                 "designation": d.get("designation"),
                 "project_name": d.get("project_name") if "project_name" in d else None,
@@ -589,7 +561,6 @@ class ManagerProfileSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField(source="user.last_name", required=False)
     email = serializers.EmailField(source="user.email", required=False)
     department = serializers.CharField(source="department.name", read_only=True)
-    department_code = serializers.ReadOnlyField(source="department.code")
     role = serializers.CharField(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
 
@@ -597,7 +568,7 @@ class ManagerProfileSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "emp_id", "first_name", "last_name", "email", "role", "gender",
-            "department", "department_code", "designation", "joining_date", "status",
+            "department", "designation", "joining_date", "status",
             "contact_number", "dob", "profile_picture", "profile_picture_url",
             "address_line1", "address_line2", "city", "state", "pincode",
         ]
@@ -634,7 +605,6 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField(source="user.last_name", required=False)
     email = serializers.EmailField(source="user.email", required=False)
     department = serializers.CharField(source="department.name", read_only=True)
-    department_code = serializers.ReadOnlyField(source="department.code")
     role = serializers.CharField(read_only=True)
     manager_name = serializers.SerializerMethodField()
     profile_picture_url = serializers.SerializerMethodField()
@@ -644,11 +614,11 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
         fields = [
             "emp_id", "first_name", "last_name", "email", "gender",
             "contact_number", "dob", "profile_picture", "profile_picture_url",
-            "role", "department", "department_code", "designation", "project_name",
+            "role", "department", "designation", "project_name",
             "joining_date", "reporting_manager_name", "manager_name", "status",
             "address_line1", "address_line2", "city", "state", "pincode",
         ]
-        read_only_fields = ["emp_id", "department", "department_code", "role", "status", "manager_name"]
+        read_only_fields = ["emp_id", "department", "role", "status", "manager_name"]
 
     def get_manager_name(self, obj):
         if obj.manager and hasattr(obj.manager, "user"):

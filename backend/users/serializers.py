@@ -230,7 +230,6 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     # Accept flexible department fields
     department = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    department_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     department_name_input = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     manager = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     joining_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -246,7 +245,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "department",
-            "department_code",
             "department_name_input",
             "department_name",
             "manager",
@@ -313,9 +311,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"department": "Department is required."})
         dept_value = str(dept_value).strip()
         department_instance = Department.objects.filter(
-            models.Q(code__iexact=dept_value)
-            | models.Q(name__iexact=dept_value)
-            | models.Q(id__iexact=dept_value)
+            name__iexact=dept_value,
+            is_active=True
         ).first()
         if not department_instance:
             raise serializers.ValidationError({"department": f"Department '{dept_value}' not found."})
@@ -394,7 +391,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         rep["temp_password"] = getattr(instance, "temp_password", None)
         if instance.department:
             rep["department"] = instance.department.name
-            rep["department_code"] = getattr(instance.department, "code", None)
         if instance.manager:
             rep["manager"] = instance.manager.username
         return rep

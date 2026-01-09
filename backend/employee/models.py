@@ -17,11 +17,6 @@ User = settings.AUTH_USER_MODEL
 class Department(models.Model):
     """Represents organizational departments."""
 
-    code = models.CharField(
-        max_length=10,
-        unique=True,
-        help_text="Short department code (e.g., ENG01)"
-    )
     name = models.CharField(
         max_length=100,
         unique=True,
@@ -37,15 +32,10 @@ class Department(models.Model):
         ordering = ["name"]
         verbose_name = "Department"
         verbose_name_plural = "Departments"
-        indexes = [models.Index(fields=["code"]), models.Index(fields=["name"])]
+        indexes = [models.Index(fields=["name"])]
 
     def __str__(self):
-        return f"{self.name} ({self.code})"
-
-    def clean(self):
-        """Basic validation for department code."""
-        if not self.code.isalnum():
-            raise ValidationError({"code": "Department code must be alphanumeric."})
+        return self.name
 
     def update_employee_count(self):
         """Recalculate and update employee count (only active, not deleted)."""

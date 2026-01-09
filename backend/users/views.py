@@ -741,7 +741,6 @@ def get_employee_by_id(request, emp_id):
             # PROFESSIONAL DETAILS
             "role": employee.role,
             "department": employee.department.name if employee.department else None,
-            "department_code": employee.department.code if employee.department else None,
             "designation": employee.designation,
             "project_name": employee.project_name,
             "joining_date": employee.joining_date,
