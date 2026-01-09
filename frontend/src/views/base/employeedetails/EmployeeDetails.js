@@ -274,7 +274,9 @@ function EmployeeTables() {
     const deptName = formData.department_name;
 
     // RESET MANAGER SELECTION
-    setFormData(prev => ({ ...prev, manager: "" }));
+    if (mode === "add") {
+      setFormData(prev => ({ ...prev, manager: "" }));
+    }
 
     // No department → show all projects
     if (!deptName) {
