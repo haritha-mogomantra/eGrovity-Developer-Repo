@@ -39,6 +39,16 @@ function stringToColor(str) {
   return `hsl(${hue}, 75%, 38%)`;  
 }
 
+const normalizeDeptName = (dept) => {
+  if (!dept) return "Unknown";
+
+  if (typeof dept === "object") {
+    return dept.name || "Unknown";
+  }
+
+  return String(dept);
+};
+
 
 
 function PerformanceDashboard() {
@@ -73,7 +83,7 @@ function PerformanceDashboard() {
       try {
         //Get latest completed week
         const latestWeekRes = await axiosInstance.get("performance/latest-week/");
-        const { week, year } = latestWeekRes.data;
+        const { latest_week: week, latest_year: year } = latestWeekRes.data;
         localStorage.setItem("latest_week", `Week-${week}`);
         localStorage.setItem("latest_year", year);
 
@@ -87,7 +97,10 @@ function PerformanceDashboard() {
 
           setHeaderEmployee({
             name: empRes.data.employee.employee_name,
-            department: empRes.data.employee.department_name,
+            department:
+              empRes.data.employee.department ||
+              empRes.data.employee.department_name ||
+              "-",
             manager: empRes.data.evaluations[0]?.manager_name || "-"
           });
         }
@@ -134,8 +147,10 @@ function PerformanceDashboard() {
               item.name ||
               `${item.first_name || ""} ${item.last_name || ""}`.trim() ||
               "Unknown",
-            department: item.department_name || "N/A",
-            score: item.total_score || 0,
+            department: normalizeDeptName(
+              item.department || item.department_name
+            ),
+            score: item.score ?? item.total_score ?? 0,
             rank: item.rank,
             profile_picture:
               item.profile_picture_url ||
@@ -393,22 +408,23 @@ const chartData = {
   };
 
 const getDeptColor = (dept) => {
+  const deptName = normalizeDeptName(dept);
+
   const bg =
-    deptColors[dept] ||
+    deptColors[deptName] ||
     deptColors[
       Object.keys(deptColors).find(
-        k => k.toLowerCase() === dept.toLowerCase()
+        k => k.toLowerCase() === deptName.toLowerCase()
       )
     ] ||
-    stringToColor(dept);   // FINAL fallback keeps original behavior
-
+    stringToColor(deptName);
 
   return {
     backgroundColor: bg,
-    color: "white",           // WHITE TEXT
+    color: "white",
     padding: "4px 14px",
     borderRadius: "14px",
-    fontWeight: "700",        // bold
+    fontWeight: "700",
     fontSize: "12px",
     display: "inline-block",
   };
