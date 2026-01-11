@@ -100,12 +100,37 @@ class CachedReport(models.Model):
         ordering = ["-generated_at"]
         verbose_name = "Cached Report"
         verbose_name_plural = "Cached Reports"
+        
         constraints = [
+            # Weekly report (global)
             models.UniqueConstraint(
-                fields=["report_type", "year", "week_number", "month", "manager", "department"],
-                name="unique_cached_report_per_period",
-            )
+                fields=["report_type", "year", "week_number"],
+                condition=models.Q(report_type="weekly"),
+                name="unique_weekly_report",
+            ),
+
+            # Monthly report
+            models.UniqueConstraint(
+                fields=["report_type", "year", "month"],
+                condition=models.Q(report_type="monthly"),
+                name="unique_monthly_report",
+            ),
+
+            # Manager-wise weekly report
+            models.UniqueConstraint(
+                fields=["report_type", "year", "week_number", "manager"],
+                condition=models.Q(report_type="manager"),
+                name="unique_manager_weekly_report",
+            ),
+
+            # Department-wise weekly report
+            models.UniqueConstraint(
+                fields=["report_type", "year", "week_number", "department"],
+                condition=models.Q(report_type="department"),
+                name="unique_department_weekly_report",
+            ),
         ]
+
         indexes = [
             models.Index(fields=["year"]),
             models.Index(fields=["month"]),
@@ -129,7 +154,8 @@ class CachedReport(models.Model):
     def save(self, *args, **kwargs):
         """Validate, timestamp, and auto-generate report name before saving."""
         self.full_clean()
-        self.generated_at = timezone.now()
+        if not self.pk:
+            self.generated_at = timezone.now()
 
         # Auto name for UI
         self.report_name = self.report_scope
@@ -184,8 +210,9 @@ class CachedReport(models.Model):
         """Detailed UI label."""
         if self.report_type == "manager" and self.manager:
             return f"Manager: {self.manager.get_full_name()} ({self.get_period_display()})"
-        elif self.report_type == "department" and self.department:
-            return f"Department: {self.department.name} ({self.get_period_display()})"
+        elif self.report_type == "department":
+            dept_name = self.department.name if self.department else "Deactivated Department"
+            return f"Department: {dept_name} ({self.get_period_display()})"
         return f"{self.report_type.title()} ({self.get_period_display()})"
 
     def soft_delete(self):
@@ -212,6 +239,7 @@ class CachedReport(models.Model):
             return f"Monthly Report — Month {self.month}, {self.year}"
         elif self.report_type == "manager" and self.manager:
             return f"Manager Report — {self.manager.get_full_name()} ({self.get_period_display()})"
-        elif self.report_type == "department" and self.department:
-            return f"Department Report — {self.department.name} ({self.get_period_display()})"
+        elif self.report_type == "department":
+            dept_name = self.department.name if self.department else "Deactivated Department"
+            return f"Department Report — {dept_name} ({self.get_period_display()})"
         return f"{self.report_type.title()} Report ({self.year})"

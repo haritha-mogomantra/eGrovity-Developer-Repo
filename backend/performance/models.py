@@ -197,7 +197,7 @@ class PerformanceEvaluation(models.Model):
     def clean(self):
         """Ensure each metric is between 0 and 100."""
         for field in [
-            "communication_skills", "multasking" if False else "multitasking", "team_skills", "technical_skills",
+            "communication_skills", "multitasking", "team_skills", "technical_skills",
             "job_knowledge", "productivity", "creativity", "work_quality",
             "professionalism", "work_consistency", "attitude", "cooperation",
             "dependability", "attendance", "punctuality",

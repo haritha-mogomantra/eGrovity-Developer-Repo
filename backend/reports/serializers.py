@@ -54,7 +54,7 @@ class WeeklyReportSerializer(serializers.Serializer, ScoreMixin):
     """Represents a single week's consolidated employee performance."""
     emp_id = serializers.CharField()
     employee_full_name = serializers.CharField()
-    department = serializers.CharField()
+    department = serializers.CharField(allow_null=True, default="Deactivated Department")
     manager_full_name = serializers.CharField(required=False, allow_null=True, default="-")
     total_score = serializers.FloatField()
     average_score = serializers.FloatField()
@@ -93,7 +93,7 @@ class MonthlyReportSerializer(serializers.Serializer, ScoreMixin):
     """Aggregated monthly performance and feedback summary."""
     emp_id = serializers.CharField()
     employee_full_name = serializers.CharField()
-    department = serializers.CharField()
+    department = serializers.CharField(allow_null=True, default="Deactivated Department")
     manager_full_name = serializers.CharField(required=False, allow_null=True, default="-")
     month = serializers.IntegerField()
     year = serializers.IntegerField()
@@ -146,7 +146,7 @@ class ManagerReportSerializer(serializers.Serializer, ScoreMixin):
     manager_full_name = serializers.CharField(required=False, allow_null=True, default="-")
     emp_id = serializers.CharField()
     employee_full_name = serializers.CharField()
-    department = serializers.CharField()
+    department = serializers.CharField(allow_null=True, default="Deactivated Department")
     total_score = serializers.FloatField()
     average_score = serializers.FloatField()
     feedback_avg = serializers.FloatField(required=False, allow_null=True, default=0)
@@ -168,7 +168,7 @@ class ManagerReportSerializer(serializers.Serializer, ScoreMixin):
 # =====================================================
 class DepartmentReportSerializer(serializers.Serializer, ScoreMixin):
     """Weekly report across all employees in a department."""
-    department_name = serializers.CharField()
+    department_name = serializers.CharField(allow_null=True, default="Deactivated Department")
     emp_id = serializers.CharField()
     employee_full_name = serializers.CharField()
     manager_full_name = serializers.CharField(required=False, allow_null=True, default="-")
@@ -198,7 +198,7 @@ class CachedReportSerializer(serializers.ModelSerializer):
     generated_by_name = serializers.CharField(source="generated_by.username", read_only=True, default="-")
     period_display = serializers.SerializerMethodField(read_only=True)
     report_label = serializers.SerializerMethodField(read_only=True)
-    export_type = serializers.SerializerMethodField(read_only=True)
+    export_type = serializers.ReadOnlyField()
 
     class Meta:
         model = CachedReport
@@ -234,12 +234,13 @@ class CachedReportSerializer(serializers.ModelSerializer):
         except Exception:
             return obj.report_type
 
+    '''
     def get_export_type(self, obj):
         try:
             return obj.export_type
         except Exception:
             return "-"
-
+'''
 
 # =====================================================
 # 8. COMBINED / AGGREGATED REPORT SERIALIZER

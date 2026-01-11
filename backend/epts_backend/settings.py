@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "notifications",
     'feedback.apps.FeedbackConfig',
     "masters",
+    "employee_lifecycle",
 ]
 
 # -------------------------------------------------------------------

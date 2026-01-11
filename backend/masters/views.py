@@ -12,6 +12,7 @@ from django.core.cache import cache
 from django_filters.rest_framework import DjangoFilterBackend
 import csv
 from django.http import HttpResponse
+from .services import DepartmentService
 
 from .models import (
     Master,
@@ -310,6 +311,46 @@ class MasterViewSet(viewsets.ModelViewSet):
         self._invalidate_cache(master.master_type)
         
         return Response(MasterDetailSerializer(master).data)
+    
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[IsAuthenticated, IsMasterAdmin],
+        url_path="deactivate"
+    )
+    def deactivate_department(self, request, pk=None):
+        """
+        Deactivate a department safely.
+        POST /api/masters/{id}/deactivate/
+        Body: { "reason": "Business restructuring" }
+        """
+
+        master = self.get_object()
+
+        # Only departments allowed
+        if master.master_type != MasterType.DEPARTMENT:
+            raise ValidationError("Only departments can be deactivated")
+
+        reason = request.data.get("reason")
+        if not reason or not reason.strip():
+            raise ValidationError({"reason": "Deactivation reason is required"})
+
+        service = DepartmentService()
+        summary = service.deactivate_department(
+            department=master,
+            action_by=request.user,
+            reason=reason
+        )
+
+        return Response(
+            {
+                "success": True,
+                "summary": summary
+            },
+            status=status.HTTP_200_OK
+        )
+
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsMasterAdmin])
     def bulk_create(self, request):

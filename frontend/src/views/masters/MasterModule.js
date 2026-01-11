@@ -4,6 +4,8 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import axiosInstance from "../../utils/axiosInstance";
 import { useMasterData } from "../../context/MasterDataContext";
+import EmployeeLifecycleAPI 
+  from "../../modules/employeeLifecycle/EmployeeLifecycleAPI";
 
 
 
@@ -481,6 +483,99 @@ function ConfirmDeleteModal({ title, message, onConfirm, onCancel, loading, acti
   );
 }
 
+
+function DeactivateDepartmentModal({
+  department,
+  onConfirm,
+  onCancel,
+  loading,
+}) {
+    const [preview, setPreview] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+
+    useEffect(() => {
+      if (!department?.id) return;
+
+      setPreviewLoading(true);
+      EmployeeLifecycleAPI
+        .previewDepartmentDeactivation(department.id)
+        .then(setPreview)
+        .catch(() => setPreview(null))
+        .finally(() => setPreviewLoading(false));
+    }, [department]);
+
+  const [reason, setReason] = useState("");
+
+  return (
+    <div
+      className="modal fade show"
+      style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+    >
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header">
+            <h6 className="modal-title">
+              Deactivate Department{department?.name ? ` – ${department.name}` : ""}
+            </h6>
+            <button className="btn-close" onClick={onCancel}></button>
+          </div>
+
+          <div className="modal-body">
+            <p className="mb-2">
+              All employees will be moved to the default department.
+            </p>
+          
+          {previewLoading && (
+            <div className="text-muted small mb-2">
+              Fetching impact summary...
+            </div>
+          )}
+
+          {preview && (
+            <div className="alert alert-warning py-2 small mb-2">
+              <strong>{preview.employee_count}</strong> active employee(s) will be affected.
+            </div>
+          )}
+
+
+            <label className="form-label fw-semibold">
+              Deactivation Reason <span className="text-danger">*</span>
+            </label>
+
+            <textarea
+              className="form-control"
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Enter reason"
+            />
+          </div>
+
+          <div className="modal-footer">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+
+            <button
+              className="btn btn-danger btn-sm"
+              disabled={!reason || loading || previewLoading || !confirmed}
+              onClick={() => onConfirm(reason)}
+            >
+              {loading && (
+                <span className="spinner-border spinner-border-sm me-1"></span>
+              )}
+              Deactivate
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // GENERIC CRUD PAGE COMPONENT
 // ============================================================================
@@ -503,6 +598,8 @@ function GenericCRUDPage({
   const [alert, setAlert] = useState({ type: "", message: "" });
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deptDeactivateTarget, setDeptDeactivateTarget] = useState(null);
+  const [deptDeactivateLoading, setDeptDeactivateLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Active");
   const [sortOrder, setSortOrder] = useState("desc"); // desc = Newest
 
@@ -549,7 +646,11 @@ function GenericCRUDPage({
 
 
   const deleteItem = (row) => {
-    setDeleteTarget(row);
+    if (masterType === "DEPARTMENT" && row.status === "Active") {
+      setDeptDeactivateTarget(row);
+    } else {
+      setDeleteTarget(row);
+    }
   };
 
   const confirmDelete = async () => {
@@ -577,6 +678,33 @@ function GenericCRUDPage({
     } finally {
         setDeleteLoading(false);
         setDeleteTarget(null);
+    }
+  };
+
+  const confirmDepartmentDeactivation = async (reason) => {
+    try {
+      setDeptDeactivateLoading(true);
+
+      await EmployeeLifecycleAPI.deactivateDepartment({
+        departmentId: deptDeactivateTarget.id,
+        reason,
+      });
+
+      reloadMasters(true);
+      await loadItems();
+
+      setAlert({
+        type: "success",
+        message: "Department deactivated and employees transferred successfully",
+      });
+    } catch (error) {
+      setAlert({
+        type: "danger",
+        message: "Failed to deactivate department",
+      });
+    } finally {
+      setDeptDeactivateLoading(false);
+      setDeptDeactivateTarget(null);
     }
   };
 
@@ -808,6 +936,16 @@ function GenericCRUDPage({
           loading={deleteLoading}
         />
       )}
+
+      {deptDeactivateTarget && (
+        <DeactivateDepartmentModal
+          department={deptDeactivateTarget}
+          loading={deptDeactivateLoading}
+          onCancel={() => setDeptDeactivateTarget(null)}
+          onConfirm={confirmDepartmentDeactivation}
+        />
+      )}
+
     </PageLayout>
   );
 }
@@ -957,18 +1095,6 @@ function ProjectsPage() {
           deptId && !isNaN(deptId) ? Number(deptId) : null;
 
         setSelectedDepartment(validDeptId);
-
-        // NEW: reload projects when department changes
-        if (validDeptId) {
-          MasterAPI.list("PROJECT", { department_code: validDeptId })
-            .then(res => setItems(res.results))
-            .catch(err => {
-              console.error("Error filtering projects:", err);
-              setItems([]);
-            });
-        } else {
-          setItems([]);
-        }
       }}
       columns={[
         { key: "name", label: "Project" },

@@ -6,6 +6,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from django.db.models import Q
 
 class MasterType(models.TextChoices):
     """Enum for allowed master types"""
@@ -99,6 +100,36 @@ class Master(models.Model):
     )
     updated_at = models.DateTimeField(auto_now=True)
 
+    # =========================
+    # Department lifecycle (ONLY for DEPARTMENT type)
+    # =========================
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Marks the default/fallback department"
+    )
+
+    deactivated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When department was deactivated"
+    )
+
+    deactivated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="departments_deactivated",
+        help_text="Who deactivated the department"
+    )
+
+    deactivation_reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Reason for department deactivation"
+    )
+
+
     class Meta:
         db_table = 'masters'
         ordering = ['master_type', 'display_order', 'name']
@@ -107,9 +138,15 @@ class Master(models.Model):
             models.Index(fields=['name']),
             models.Index(fields=['code']),
         ]
-        constraints = []
         verbose_name = 'Master'
         verbose_name_plural = 'Masters'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"],
+                condition=Q(master_type=MasterType.DEPARTMENT, is_default=True),
+                name="single_default_department"
+            )
+        ]
 
     def __str__(self):
         return f"{self.master_type}: {self.name}"
@@ -155,6 +192,62 @@ class Master(models.Model):
             raise ValidationError({
                 'parent': _('Parent must be of the same master type')
             })
+        
+        # =========================
+        # Department-specific rules
+        # =========================
+        if self.master_type == MasterType.DEPARTMENT:
+            # Default department cannot be inactive
+            if self.is_default and self.status == MasterStatus.INACTIVE:
+                raise ValidationError({
+                    'is_default': _('Default department cannot be deactivated')
+                })
+
+            # Deactivation reason mandatory when inactivating
+            if self.status == MasterStatus.INACTIVE and not self.deactivation_reason:
+                raise ValidationError({
+                    'deactivation_reason': _('Deactivation reason is required')
+                })
+        
+        if self.master_type == MasterType.DEPARTMENT and self.status == MasterStatus.ACTIVE:
+            self.deactivated_at = None
+            self.deactivated_by = None
+            self.deactivation_reason = None
+
+        # =========================
+        # Role metadata validation
+        # =========================
+        if self.master_type == MasterType.ROLE and self.metadata:
+            scope = self.metadata.get("scope")
+            level = self.metadata.get("level")
+
+            if scope not in ("GLOBAL", "DEPARTMENT"):
+                raise ValidationError({
+                    'metadata': _('ROLE metadata.scope must be GLOBAL or DEPARTMENT')
+                })
+
+            if not isinstance(level, int) or level < 1:
+                raise ValidationError({
+                    'metadata': _('ROLE metadata.level must be a positive integer')
+                })
+            
+        if self.master_type != MasterType.DEPARTMENT and self.is_default:
+            raise ValidationError({
+                'is_default': _('is_default is only valid for departments')
+            })
+        
+
+        if self.master_type != MasterType.DEPARTMENT:
+            if any([self.deactivated_at, self.deactivated_by, self.deactivation_reason]):
+                raise ValidationError(
+                    _('Deactivation fields are only applicable to departments')
+                )
+            
+        if self.is_default and self.status != MasterStatus.ACTIVE:
+            raise ValidationError({
+                'status': _('Default department must always be ACTIVE')
+            })
+
 
     def save(self, *args, **kwargs):
         """
@@ -165,7 +258,11 @@ class Master(models.Model):
         update_fields = kwargs.get("update_fields")
 
         # ✅ Skip full_clean for soft delete / status-only update
-        if update_fields and set(update_fields).issubset({"status", "updated_by"}):
+        if (
+            update_fields
+            and set(update_fields).issubset({"status", "updated_by"})
+            and self.master_type != MasterType.DEPARTMENT
+        ):
             super().save(*args, **kwargs)
             return
 

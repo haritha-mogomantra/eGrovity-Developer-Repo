@@ -1,4 +1,5 @@
 import React from 'react'
+import { Navigate } from 'react-router-dom'
 
 const Dashboard = React.lazy(() => import('./views/dashboard/Dashboard'))
 const AdminDashboard = React.lazy(() => import('./views/dashboard/AdminDashboard'))
@@ -17,8 +18,6 @@ const Collapses = React.lazy(() => import('./views/base/collapses/Collapses'))
 const ListGroups = React.lazy(() => import('./views/base/list-groups/ListGroups'))
 const Navs = React.lazy(() => import('./views/base/navs/Navs'))
 const Paginations = React.lazy(() => import('./views/base/paginations/Paginations'))
-
-
 
 
 const Tabs = React.lazy(() => import('./views/base/tabs/Tabs'))
@@ -69,6 +68,10 @@ const Toasts = React.lazy(() => import('./views/notifications/toasts/Toasts'))
 const Widgets = React.lazy(() => import('./views/widgets/Widgets'))
 
 const MasterModule = React.lazy(() => import('./views/masters/MasterModule'))
+
+const EmployeeLifecycleHistory = React.lazy(
+  () => import('./modules/employeeLifecycle/EmployeeLifecycleHistory')
+)
 
 
 const routes = [
@@ -150,6 +153,17 @@ const routes = [
   { path: '/notifications/toasts', name: null, element: Toasts },
   { path: '/widgets', name: null, element: Widgets },
   { path: '/masters/:type', name: 'Masters', element: MasterModule },
+
+  {
+    path: '/employee-lifecycle/history',
+    name: 'Employee Lifecycle History',
+    element: () => {
+      const role = localStorage.getItem("role")?.toLowerCase();
+      return role === "admin"
+        ? <EmployeeLifecycleHistory />
+        : <Navigate to="/dashboard" replace />;
+    }
+  },
 ]
 
 export default routes

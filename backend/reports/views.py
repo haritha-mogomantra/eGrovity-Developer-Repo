@@ -135,7 +135,8 @@ def normalize_report_rows(records):
         )
 
         # 🔥 Convert department code → full name
-        dept_full = department_map.get(str(dept_raw).upper(), dept_raw)
+        dept_key = str(dept_raw).upper() if dept_raw not in ["-", None] else None
+        dept_full = department_map.get(dept_key, dept_raw)
 
         normalized.append({
             "id": r.get("emp_id") or r.get("id") or "-",
@@ -474,8 +475,6 @@ class DepartmentReportView(APIView):
                     f"{manager_obj.user.first_name} {manager_obj.user.last_name}".strip()
                     if manager_obj else "-"
                 )
-
-                manager_full_name = "-"
 
                 if hasattr(emp, "manager") and emp.manager and hasattr(emp.manager, "user"):
                     manager_full_name = emp.manager.user.get_full_name()
@@ -971,8 +970,8 @@ class CachedReportArchiveView(APIView):
 
     def post(self, request, pk):
         report = get_object_or_404(CachedReport, pk=pk)
-        report.is_archived = True
-        report.save(update_fields=["is_archived"])
+        report.is_active = False
+        report.save(update_fields=["is_active"])
         return Response(
             {"message": f"Report {report.id} archived successfully."},
             status=status.HTTP_200_OK,
@@ -985,8 +984,8 @@ class CachedReportRestoreView(APIView):
 
     def post(self, request, pk):
         report = get_object_or_404(CachedReport, pk=pk)
-        report.is_archived = False
-        report.save(update_fields=["is_archived"])
+        report.is_active = True
+        report.save(update_fields=["is_active"])
         return Response(
             {"message": f"Report {report.id} restored successfully."},
             status=status.HTTP_200_OK,

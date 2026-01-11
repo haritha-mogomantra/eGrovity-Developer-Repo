@@ -113,9 +113,6 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
             return qs.filter(week_number=week).select_related(
                 "employee__user", "department"
             )
-            # fallback: filter by week number across years (rare)
-            return qs.filter(week_number=week).select_related("employee__user", "department")
-
 
 
         # If only year provided -> return entire year (all weeks)
@@ -156,7 +153,6 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
         try:
             instance = serializer.save()       # create + calculate scores in model.save()
             instance.refresh_from_db()         # critical: pull updated scores/evaluation_period
-            instance.refresh_from_db()         # critical: pull updated rank
         except IntegrityError:
             return Response(
                 {"error": "Performance record already exists for this week and evaluator."},
@@ -321,9 +317,6 @@ class PerformanceSummaryView(APIView):
         dept_name = request.query_params.get("department")
 
         # --- Read Optional Week/Year From Frontend ---
-        req_week = request.query_params.get("week")
-        req_year = request.query_params.get("year")
-
         req_week = request.query_params.get("week")
         req_year = request.query_params.get("year")
 

@@ -28,7 +28,7 @@ class SimpleUserSerializer(serializers.ModelSerializer):
 class SimpleDepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
-        fields = ["id", "name", "code"]
+        fields = ["id", "name"]
 
 
 class SimpleEmployeeSerializer(serializers.ModelSerializer):
@@ -40,7 +40,7 @@ class SimpleEmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            "id", "user", "designation", "status", "role",
+            "id", "user", "designation", "status",
             "department_name", "full_name", "manager_name",
         ]
 
@@ -317,14 +317,13 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
     employee = serializers.CharField(write_only=True, required=False)
     employee_emp_id = serializers.CharField(write_only=True, required=False)
     evaluator_emp_id = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
-    department_code = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
     week = serializers.IntegerField(write_only=True, required=False)
     year = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
         model = PerformanceEvaluation
         fields = [
-            "id", "employee", "employee_emp_id", "evaluator_emp_id", "department_code",
+            "id", "employee", "employee_emp_id", "evaluator_emp_id",
             "evaluation_type", "review_date", "evaluation_period",
             "week_number", "year", "week",
 
@@ -371,16 +370,8 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
             if request and hasattr(request, "user"):
                 self.context["evaluator"] = request.user
 
-        # Department handling
-        dept_code = attrs.get("department_code")
-        if dept_code:
-            try:
-                dept = Department.objects.get(code__iexact=dept_code, is_active=True)
-            except Department.DoesNotExist:
-                raise serializers.ValidationError({"department_code": f"Department '{dept_code}' not found or inactive."})
-            self.context["department"] = dept
-        else:
-            self.context["department"] = emp.department
+        # Department always comes from employee
+        self.context["department"] = emp.department
 
         if self.instance:
             inst_year = self.instance.year
@@ -482,7 +473,7 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
         evaluator = self.context.get("evaluator")
         department = self.context.get("department")
 
-        for f in ["employee", "employee_emp_id", "evaluator_emp_id", "department_code", "week"]:
+        for f in ["employee", "employee_emp_id", "evaluator_emp_id", "week"]:
             validated_data.pop(f, None)
 
 
@@ -571,7 +562,7 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
         # Apply non-metric fields
         # ---------------------------------------
         for attr, value in validated_data.items():
-            if attr in ["employee", "employee_emp_id", "evaluator_emp_id", "department_code"]:
+            if attr in ["employee", "employee_emp_id", "evaluator_emp_id"]:
                 continue
             setattr(instance, attr, value)
 
