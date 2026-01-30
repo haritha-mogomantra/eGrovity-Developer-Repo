@@ -6,43 +6,12 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 import os
+from masters.models import Master, MasterType
+from employee_lifecycle.models import EmployeeDepartmentHistory, MovementType
+
 
 # Use the AUTH_USER_MODEL string to avoid import-time circular issues
 User = settings.AUTH_USER_MODEL
-
-
-# ===========================================================
-# Department Model
-# ===========================================================
-class Department(models.Model):
-    """Represents organizational departments."""
-
-    name = models.CharField(
-        max_length=100,
-        unique=True,
-        help_text="Department name (e.g., Engineering)"
-    )
-    description = models.TextField(blank=True, null=True, help_text="Optional department description.")
-    employee_count = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["name"]
-        verbose_name = "Department"
-        verbose_name_plural = "Departments"
-        indexes = [models.Index(fields=["name"])]
-
-    def __str__(self):
-        return self.name
-
-    def update_employee_count(self):
-        """Recalculate and update employee count (only active, not deleted)."""
-        self.employee_count = self.employees.filter(status="Active", is_deleted=False).count()
-        # update both employee_count and updated_at for explicitness
-        self.save(update_fields=["employee_count", "updated_at"])
-
 
 # ===========================================================
 # Employee Model
@@ -56,12 +25,6 @@ class Employee(models.Model):
         ("On Leave", "On Leave"),
     ]
 
-    ROLE_CHOICES = [
-        ("Admin", "Admin"),
-        ("Manager", "Manager"),
-        ("Employee", "Employee"),
-    ]
-
     # -----------------------------------------------------------
     # Core Relationships
     # -----------------------------------------------------------
@@ -72,12 +35,18 @@ class Employee(models.Model):
         help_text="Linked Django User account."
     )
     department = models.ForeignKey(
-        Department,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        Master,
+        on_delete=models.PROTECT,
         related_name="employees",
-        help_text="Department this employee belongs to."
+        limit_choices_to={"master_type": MasterType.DEPARTMENT},
+        help_text="Department (Master-based)"
+    )
+    role = models.ForeignKey(
+        Master,
+        on_delete=models.PROTECT,
+        related_name="employees_by_role",
+        limit_choices_to={"master_type": MasterType.ROLE},
+        help_text="Role (Master-based)"
     )
     manager = models.ForeignKey(
         "self",
@@ -91,10 +60,15 @@ class Employee(models.Model):
     # -----------------------------------------------------------
     # Professional Fields
     # -----------------------------------------------------------
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="Employee")
-    designation = models.CharField(max_length=100, blank=True, null=True)
-    project_name = models.CharField(max_length=150, blank=True, null=True, help_text="Project the employee is working on")
-    reporting_manager_name = models.CharField(max_length=150, blank=True, null=True, help_text="Reporting manager's name")
+    designation = models.ForeignKey(
+        Master,
+        on_delete=models.PROTECT,
+        related_name="employees_by_designation",
+        limit_choices_to={"master_type": MasterType.DESIGNATION},
+        null=True,
+        blank=True,
+        help_text="Designation (Master-based)"
+    )
     joining_date = models.DateField(default=timezone.now)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Active")
 
@@ -132,13 +106,12 @@ class Employee(models.Model):
     # Meta Configuration
     # -----------------------------------------------------------
     class Meta:
-        ordering = ["user__emp_id"]
+        ordering = ["id"]
         verbose_name = "Employee"
         verbose_name_plural = "Employees"
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["department"]),
-            models.Index(fields=["role"]),
             models.Index(fields=["is_deleted"]),
         ]
 
@@ -158,11 +131,6 @@ class Employee(models.Model):
         """Return user's full name or username fallback."""
         return f"{self.user.first_name} {self.user.last_name}".strip() or self.user.username
 
-    def get_department_name(self):
-        return self.department.name if self.department else "-"
-
-    def get_role_display_name(self):
-        return dict(self.ROLE_CHOICES).get(self.role, "Employee")
 
     @property
     def manager_display_name(self):
@@ -172,7 +140,8 @@ class Employee(models.Model):
         """
         if self.manager and hasattr(self.manager, "user"):
             return f"{self.manager.user.first_name} {self.manager.user.last_name}".strip()
-        return self.reporting_manager_name or "Not Assigned"
+        return "Not Assigned"
+
 
     @property
     def team_size(self):
@@ -198,23 +167,23 @@ class Employee(models.Model):
         if not self.user or not getattr(self.user, "email", None):
             raise ValidationError({"user": "Linked User must have a valid email."})
 
-        # Email uniqueness across employees (excluding current record)
-        if Employee.objects.exclude(id=self.id).filter(user__email=self.user.email).exists():
-            raise ValidationError({"user": "An employee with this email already exists."})
-
         # Manager cannot be self
         if self.manager and self.manager == self:
             raise ValidationError({"manager": "An employee cannot be their own manager."})
 
-        # Manager must be Manager/Admin
         if self.manager:
-            manager_role = getattr(self.manager, "role", None)
-            if manager_role not in ["Manager", "Admin"]:
-                raise ValidationError({"manager": "Assigned manager must have role 'Manager' or 'Admin'."})
+            if self.manager.is_deleted:
+                raise ValidationError({"manager": "Manager cannot be deleted"})
+
+            if self.manager.status != "Active":
+                raise ValidationError({"manager": "Manager must be active"})
 
         # Department required for an employee
         if not self.department:
             raise ValidationError({"department": "Employee must belong to a department."})
+        
+        if not self.role:
+            raise ValidationError({"role": "Employee must have a role assigned."})
 
         # Date checks
         if self.joining_date and self.joining_date > timezone.now().date():
@@ -232,65 +201,98 @@ class Employee(models.Model):
             ext = os.path.splitext(self.profile_picture.name)[1].lower()
             if ext not in [".jpg", ".jpeg", ".png"]:
                 raise ValidationError({"profile_picture": "Only JPG and PNG images are allowed."})
+            
+        if self.status == "Active" and self.department.status != "Active":
+            raise ValidationError({
+                "status": "Employee cannot be active in an inactive department"
+            })
 
+    # -----------------------------------------------------------
+    # Save Override (JOIN lifecycle)
+    # -----------------------------------------------------------
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+
+        if not hasattr(self, "_validated_from_serializer"):
+            self.full_clean()
+
+        if not is_new:
+            old = Employee.objects.select_related(
+                "department", "role", "designation"
+            ).get(pk=self.pk)
+
+            if old.department != self.department:
+                EmployeeDepartmentHistory.objects.filter(
+                    employee=self,
+                    left_at__isnull=True
+                ).update(left_at=timezone.now())
+
+                EmployeeDepartmentHistory.objects.create(
+                    employee=self,
+                    department=self.department,
+                    role=self.role,
+                    designation=self.designation,
+                    joined_at=timezone.now(),
+                    left_at=None,
+                    movement_type=MovementType.TRANSFER,
+                    reason="Department updated",
+                    action_by=getattr(self, "_action_user", self.user)
+                )
+
+        super().save(*args, **kwargs)
+
+        if is_new:
+            action_user = getattr(self, "_action_user", None)
+
+            EmployeeDepartmentHistory.objects.create(
+                employee=self,
+                department=self.department,
+                role=self.role,
+                designation=self.designation,
+                joined_at=timezone.now(),
+                left_at=None,
+                movement_type=MovementType.JOIN,
+                reason="Initial join",
+                action_by=(
+                    action_user.user if hasattr(action_user, "user")
+                    else action_user
+                    if action_user
+                    else self.user
+                )
+            )
+            
     # -----------------------------------------------------------
     # Save Override
     # -----------------------------------------------------------
-    def save(self, *args, **kwargs):
+    def soft_delete(self, action_by=None, reason="Employee soft deleted"):
         """
-        Ensure validations and department-count consistency while saving.
-        The serializer sets _validated_from_serializer to bypass redundant full_clean.
+        Soft delete the employee and deactivate the user account.
+        Also logs lifecycle termination.
         """
-        # Allow soft-delete updates to bypass validation safely
-        if kwargs.get("update_fields") == ["is_deleted", "status"]:
-            super().save(*args, **kwargs)
-            return
-
-        if self.is_deleted:
-            raise ValidationError({"employee": "❌ Cannot modify a deleted employee."})
-
-        if not hasattr(self, "_validated_from_serializer"):
-            # full_clean will call clean() and field validators
-            self.full_clean()
-
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
-
-        # Update department count for the current department
-        if self.department:
-            self.department.update_employee_count()
-
-        # If department changed, update the old department count too
-        if not is_new and hasattr(self, "_old_department_id"):
-            old_dept = Department.objects.filter(id=self._old_department_id).first()
-            if old_dept and old_dept != self.department:
-                old_dept.update_employee_count()
-
-    def __init__(self, *args, **kwargs):
-        """
-        Track the old department id to adjust counts on department move.
-        """
-        super().__init__(*args, **kwargs)
-        self._old_department_id = self.department_id
-
-    # -----------------------------------------------------------
-    # Soft Delete Logic
-    # -----------------------------------------------------------
-    def soft_delete(self):
-        """Soft delete the employee and deactivate the user account."""
         if self.is_deleted:
             raise ValidationError({"employee": "This employee is already deleted."})
 
+        # --------------------------------------------------
+        # Lifecycle termination record
+        # --------------------------------------------------
+        EmployeeDepartmentHistory.objects.filter(
+            employee=self,
+            left_at__isnull=True
+        ).update(
+            left_at=timezone.now(),
+            movement_type=MovementType.TERMINATION,
+            reason=reason,
+            action_by=action_by.user if action_by else self.user
+        )
+
+        # --------------------------------------------------
+        # Soft delete flags
+        # --------------------------------------------------
         self.is_deleted = True
         self.status = "Inactive"
 
         if self.user:
-            # Deactivate related user
             self.user.is_active = False
             self.user.save(update_fields=["is_active"])
 
-        # Save only the changed fields
         super().save(update_fields=["is_deleted", "status"])
-
-        if self.department:
-            self.department.update_employee_count()

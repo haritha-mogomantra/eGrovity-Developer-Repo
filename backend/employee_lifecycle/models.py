@@ -52,7 +52,7 @@ class EmployeeDepartmentHistory(models.Model):
         Master,
         on_delete=models.PROTECT,
         related_name='lifecycle_designations',
-        limit_choices_to={"master_type": MasterType.METRIC}
+        limit_choices_to={"master_type": MasterType.DESIGNATION}
     )
 
     joined_at = models.DateTimeField()
@@ -63,7 +63,7 @@ class EmployeeDepartmentHistory(models.Model):
         choices=MovementType.choices
     )
 
-    reason = models.TextField()
+    reason = models.TextField(blank=True, null=True)
 
     action_by = models.ForeignKey(
         User,
@@ -80,11 +80,32 @@ class EmployeeDepartmentHistory(models.Model):
             models.Index(fields=['department']),
             models.Index(fields=['movement_type']),
         ]
+    
+    def clean(self):
+        if self.left_at is None:
+            existing_open = EmployeeDepartmentHistory.objects.filter(
+                employee=self.employee,
+                left_at__isnull=True
+            ).exclude(pk=self.pk)
+
+            if existing_open.exists():
+                raise ValidationError(
+                    "Employee cannot have more than one active department tenure"
+                )
 
     def save(self, *args, **kwargs):
         if self.pk:
             raise ValidationError("Lifecycle records are immutable")
+
+        # 🔒 SAFETY CHECK: action_by must always be User
+        if self.action_by and hasattr(self.action_by, "employee_profile"):
+            raise ValidationError({
+                "action_by": "action_by must be a User, not an Employee"
+            })
+
+        self.full_clean()
         super().save(*args, **kwargs)
+
 
     def __str__(self):
         return f"{self.employee} | {self.department} | {self.role}"

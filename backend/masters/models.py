@@ -12,6 +12,7 @@ class MasterType(models.TextChoices):
     """Enum for allowed master types"""
     ROLE = 'ROLE', _('Role')
     DEPARTMENT = 'DEPARTMENT', _('Department')
+    DESIGNATION = 'DESIGNATION', _('Designation')
     PROJECT = 'PROJECT', _('Project')
     METRIC = 'METRIC', _('Metric')
 
@@ -66,7 +67,7 @@ class Master(models.Model):
     # For hierarchical masters (e.g., sub-departments)
     parent = models.ForeignKey(
         'self',
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         blank=True,
         null=True,
         related_name='children'
@@ -140,13 +141,6 @@ class Master(models.Model):
         ]
         verbose_name = 'Master'
         verbose_name_plural = 'Masters'
-        constraints = [
-            models.UniqueConstraint(
-                fields=["is_default"],
-                condition=Q(master_type=MasterType.DEPARTMENT, is_default=True),
-                name="single_default_department"
-            )
-        ]
 
     def __str__(self):
         return f"{self.master_type}: {self.name}"
@@ -177,8 +171,7 @@ class Master(models.Model):
         if self.code and self.master_type == MasterType.DEPARTMENT:
             duplicate_code = Master.objects.filter(
                 master_type=self.master_type,
-                code__iexact=self.code,
-                status=MasterStatus.ACTIVE
+                code__iexact=self.code
             ).exclude(pk=self.pk).exists()
             
             if duplicate_code:
@@ -208,6 +201,18 @@ class Master(models.Model):
                 raise ValidationError({
                     'deactivation_reason': _('Deactivation reason is required')
                 })
+            
+            # Enforce single default department (MySQL-safe)
+            if self.is_default:
+                existing_default = Master.objects.filter(
+                    master_type=MasterType.DEPARTMENT,
+                    is_default=True
+                ).exclude(pk=self.pk)
+
+                if existing_default.exists():
+                    raise ValidationError({
+                        'is_default': _('Only one default department is allowed')
+                    })
         
         if self.master_type == MasterType.DEPARTMENT and self.status == MasterStatus.ACTIVE:
             self.deactivated_at = None
@@ -260,7 +265,7 @@ class Master(models.Model):
         # ✅ Skip full_clean for soft delete / status-only update
         if (
             update_fields
-            and set(update_fields).issubset({"status", "updated_by"})
+            and set(update_fields).issubset({"status", "updated_by", "updated_at"})
             and self.master_type != MasterType.DEPARTMENT
         ):
             super().save(*args, **kwargs)
@@ -341,70 +346,3 @@ class ProjectDetails(models.Model):
 
     def __str__(self):
         return f"ProjectDetails({self.project.name})"
-
-
-
-# =====================================================
-# EMPLOYEE ROLE ASSIGNMENT (RBAC MASTER)
-# =====================================================
-
-class EmployeeRoleAssignment(models.Model):
-    """
-    Assigns roles to employees.
-    Single source of truth for RBAC.
-    """
-
-    id = models.AutoField(primary_key=True)
-
-    employee = models.ForeignKey(
-        "employee.Employee",
-        on_delete=models.CASCADE,
-        related_name="role_assignments"
-    )
-
-    role = models.ForeignKey(
-        Master,
-        on_delete=models.PROTECT,
-        related_name="employee_role_assignments",
-        limit_choices_to={"master_type": MasterType.ROLE}
-    )
-
-    department = models.ForeignKey(
-        Master,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="employee_role_departments",
-        limit_choices_to={"master_type": MasterType.DEPARTMENT}
-    )
-
-    reporting_manager = models.ForeignKey(
-        "employee.Employee",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="reporting_employees"
-    )
-
-    status = models.CharField(
-        max_length=10,
-        choices=MasterStatus.choices,
-        default=MasterStatus.ACTIVE,
-        db_index=True
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "employee_role_assignments"
-        ordering = ["-created_at"]
-        unique_together = ("employee", "role")
-        indexes = [
-            models.Index(fields=["employee", "status"]),
-            models.Index(fields=["role", "status"]),
-        ]
-
-    def __str__(self):
-        return f"{self.employee} → {self.role.name}"
-

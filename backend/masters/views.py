@@ -13,25 +13,24 @@ from django_filters.rest_framework import DjangoFilterBackend
 import csv
 from django.http import HttpResponse
 from .services import DepartmentService
+from django.db import transaction
 
 from .models import (
     Master,
     MasterAuditLog,
     MasterType,
     MasterStatus,
-    ProjectDetails,
-    EmployeeRoleAssignment
+    ProjectDetails
 )
 from .serializers import (
     MasterListSerializer, MasterDetailSerializer, 
     MasterCreateUpdateSerializer, MasterStatusUpdateSerializer,
     MasterBulkCreateSerializer, MasterAuditLogSerializer,
-    MasterDropdownSerializer, EmployeeRoleAssignmentSerializer
+    MasterDropdownSerializer
 )
 from .permissions import IsMasterAdmin, IsMasterAdminOrReadOnly
 from .utils import log_master_change
 from rest_framework.views import APIView
-from employee.models import Employee
 
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -193,14 +192,6 @@ class MasterViewSet(viewsets.ModelViewSet):
             department_id = self.request.data.get("department_id")
             manager_ids = self.request.data.get("managers")
 
-            # =====================================================
-            # ✅ MANAGER IS MANDATORY FOR PROJECT (BUSINESS RULE)
-            # =====================================================
-            if not manager_ids:
-                raise ValidationError({
-                    "managers": "At least one manager must be assigned to the project"
-                })
-
             project_details, _ = ProjectDetails.objects.get_or_create(
                 project=master
             )
@@ -241,6 +232,13 @@ class MasterViewSet(viewsets.ModelViewSet):
         Soft delete master by setting status = Inactive
         """
 
+        # ❌ Departments must not be deleted directly
+        if instance.master_type == MasterType.DEPARTMENT:
+            raise ValidationError(
+                "Departments must be deactivated using the /deactivate endpoint"
+            )
+
+
         # System masters cannot be deleted
         if instance.is_system:
             raise PermissionDenied("System masters cannot be deleted")
@@ -279,6 +277,13 @@ class MasterViewSet(viewsets.ModelViewSet):
         Body: {"status": "Active" or "Inactive"}
         """
         master = self.get_object()
+
+        # ❌ Department status must use /deactivate endpoint
+        if master.master_type == MasterType.DEPARTMENT:
+            raise ValidationError(
+                "Use /deactivate endpoint to change department status"
+            )
+
         
         if master.is_system and request.data.get('status') == MasterStatus.INACTIVE:
             return Response(
@@ -313,6 +318,7 @@ class MasterViewSet(viewsets.ModelViewSet):
         return Response(MasterDetailSerializer(master).data)
     
 
+    @transaction.atomic
     @action(
         detail=True,
         methods=["post"],
@@ -335,13 +341,43 @@ class MasterViewSet(viewsets.ModelViewSet):
         reason = request.data.get("reason")
         if not reason or not reason.strip():
             raise ValidationError({"reason": "Deactivation reason is required"})
+        
+        target_department_id = request.data.get("target_department_id")
+        if not target_department_id:
+            raise ValidationError({
+                "target_department_id": "Target department is required"
+            })
+
+        target_department = Master.objects.filter(
+            id=target_department_id,
+            master_type=MasterType.DEPARTMENT,
+            status=MasterStatus.ACTIVE
+        ).first()
+
+        if not target_department:
+            raise ValidationError({
+                "target_department_id": "Invalid or inactive target department"
+            })
+        
+        if target_department.id == master.id:
+            raise ValidationError({
+                "target_department_id": "Target department must be different from the deactivated department"
+            })
+
 
         service = DepartmentService()
         summary = service.deactivate_department(
             department=master,
+            target_department=target_department,
             action_by=request.user,
             reason=reason
         )
+
+        # 🔒 Finally deactivate department itself
+        master.status = MasterStatus.INACTIVE
+        master.updated_by = request.user
+        master.save(update_fields=["status", "updated_by"])
+
 
         return Response(
             {
@@ -366,6 +402,11 @@ class MasterViewSet(viewsets.ModelViewSet):
         errors = []
         
         for idx, master_data in enumerate(serializer.validated_data['masters']):
+            if master_data.get("master_type") == MasterType.PROJECT:
+                raise ValidationError(
+                    "Projects cannot be bulk created. Use the normal create API."
+                )
+
             try:
                 master_serializer = MasterCreateUpdateSerializer(data=master_data)
                 master_serializer.is_valid(raise_exception=True)
@@ -520,38 +561,5 @@ class MasterViewSet(viewsets.ModelViewSet):
             cache_key = f'masters_dropdown_{master_type}_{status_value.value}'
             cache.delete(cache_key)
 
-
-
-# =====================================================
-# EMPLOYEE ROLE ASSIGNMENT (RBAC MASTER)
-# =====================================================
-
-class EmployeeRoleAssignmentViewSet(viewsets.ModelViewSet):
-    """
-    RBAC Master:
-    Assigns roles to employees.
-    Admin-only write access.
-    """
-
-    queryset = EmployeeRoleAssignment.objects.select_related(
-        "employee",
-        "role",
-        "department",
-        "reporting_manager",
-    )
-    serializer_class = EmployeeRoleAssignmentSerializer
-    permission_classes = [IsAuthenticated, IsMasterAdmin]
-
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["role", "department", "status"]
-    search_fields = [
-        "employee__user__first_name",
-        "employee__user__last_name",
-        "role__name",
-    ]
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
+        # 🔥 Project dropdown depends on multiple masters
+        cache.delete("masters_dropdown_PROJECT_Active")

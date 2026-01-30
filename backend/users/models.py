@@ -12,6 +12,7 @@ from django.utils.crypto import get_random_string
 from datetime import timedelta, datetime
 import uuid
 import os
+from masters.models import Master, MasterType
 
 
 # ===========================================================
@@ -115,7 +116,6 @@ class UserManager(BaseUserManager):
         """Create and save a superuser."""
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("role", "Admin")
         extra_fields.setdefault("is_active", True)
         extra_fields.setdefault("force_password_change", False)
 
@@ -136,12 +136,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     Aligned with frontend forms and APIs.
     """
 
-    ROLE_CHOICES = [
-        ("admin", "Admin"),
-        ("manager", "Manager"),
-        ("employee", "Employee"),
-    ]
-
     # ---------- CORE ----------
     emp_id = models.CharField(
         max_length=50,
@@ -153,14 +147,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True, db_index=True)
     first_name = models.CharField(max_length=100, blank=True)
     last_name = models.CharField(max_length=100, blank=True)
-
-    role = models.CharField(
-        max_length=20,
-        choices=ROLE_CHOICES,
-        default="Employee",
-        db_index=True,
-        help_text="User role"
-    )
 
     temp_password = models.CharField(
         max_length=128,
@@ -177,21 +163,21 @@ class User(AbstractBaseUser, PermissionsMixin):
         validators=[RegexValidator(r"^\+?\d{7,15}$", "Enter a valid phone number.")],
     )
 
-    # ---------- ORGANIZATION ----------
     department = models.ForeignKey(
-        "employee.Department",
+        Master,
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="users",
+        limit_choices_to={"master_type": MasterType.DEPARTMENT},
     )
-    manager = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
+
+    designation = models.CharField(
+        max_length=100,
         null=True,
         blank=True,
-        related_name='direct_reports',
-        limit_choices_to={'role__in': ['Manager', 'Admin']},
+        db_index=True,
+        help_text="Employee designation entered manually (e.g. Senior Data Analyst)"
     )
 
     joining_date = models.DateField(default=timezone.now)
@@ -227,8 +213,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = "Users"
         ordering = ["emp_id"]
         indexes = [
-            models.Index(fields=["username", "email", "emp_id"]),
-            models.Index(fields=["role", "is_active"]),
+            models.Index(fields=["username", "email", "emp_id"])
         ]
 
     def __str__(self):
@@ -262,35 +247,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         """
         super().clean()
 
-        # Employees should have a department (this uses the in-memory field too)
-        if self.role == "Employee" and not self.department:
-            raise ValidationError({'department': 'Employees must belong to a department.'})
-
-        # Prevent user being their own manager (use manager_id to avoid FK object resolution)
-        if self.manager_id and self.id and self.manager_id == self.id:
-            raise ValidationError({'manager': 'User cannot be their own manager.'})
-
-        # Circular manager check only when PK exists (can't reliably check before PK)
-        if self.pk and self.manager_id:
-            visited = {self.pk}
-            current = self.manager
-            while current:
-                # defensive: stop if no PK on manager
-                if not getattr(current, 'pk', None):
-                    break
-                if current.pk in visited:
-                    raise ValidationError({'manager': 'Circular manager relationship detected.'})
-                visited.add(current.pk)
-                current = current.manager
-
     def save(self, *args, **kwargs):
         """
         Save with safe validation: if object has a PK, run full_clean.
         If creating (no PK yet), run only light validation to avoid relationship access that requires PK.
         """
-        # Ensure role is always lowercase
-        if self.role:
-            self.role = self.role.lower()
 
         # Light validation: we can still check certain constraints without forcing FK resolution
         # For create (no PK) call full_clean but tolerant: wrap in try/except to avoid FK lookups
@@ -320,15 +281,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.account_locked:
             return "Locked"
         return "Active" if self.is_active else "Inactive"
-
-    def is_admin(self):
-        return self.is_superuser or self.role == "admin"
-
-    def is_manager(self):
-        return self.role == "manager"
-
-    def is_employee(self):
-        return self.role == "employee"
 
     # ======================================================
     # ACCOUNT LOCKOUT & LOGIN ATTEMPTS

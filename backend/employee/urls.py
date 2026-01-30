@@ -1,10 +1,10 @@
+'''
 # ===========================================================
 # employee/urls.py
 # ===========================================================
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    DepartmentViewSet,
     EmployeeViewSet,
     EmployeeCSVUploadView,
     AdminProfileView,
@@ -46,7 +46,6 @@ Custom routes within ViewSets may include:
 # DRF Router Configuration
 # -----------------------------------------------------------
 router = DefaultRouter()
-router.register(r"departments", DepartmentViewSet, basename="departments")
 router.register(r"employees", EmployeeViewSet, basename="employees")
 
 # -----------------------------------------------------------
@@ -64,4 +63,27 @@ urlpatterns = [
     path("manager/profile/", ManagerProfileView.as_view(), name="manager_profile"),
     path("profile/", EmployeeProfileView.as_view(), name="employee_profile"),
     path("employees/employee/<str:emp_id>/", get_employee_by_id, name="get_employee_by_id"),
+]
+'''
+
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import (
+    EmployeeViewSet,
+    AdminProfileView,
+    ManagerProfileView,
+    EmployeeProfileView,
+)
+
+app_name = "employee"
+
+router = DefaultRouter()
+router.register(r"employees", EmployeeViewSet, basename="employees")
+
+urlpatterns = [
+    path("", include(router.urls)),
+
+    path("admin/profile/", AdminProfileView.as_view(), name="admin_profile"),
+    path("manager/profile/", ManagerProfileView.as_view(), name="manager_profile"),
+    path("profile/", EmployeeProfileView.as_view(), name="employee_profile"),
 ]

@@ -27,11 +27,10 @@ class LifecycleService:
         and logs lifecycle history.
         """
 
-        from employee.models import Employee
-
         employees = Employee.objects.filter(
             department=department,
-            is_active=True
+            is_deleted=False,
+            status="Active"
         )
 
         now = timezone.now()
@@ -47,14 +46,20 @@ class LifecycleService:
                 left_at=now,
                 movement_type=MovementType.DEPT_DEACTIVATION,
                 reason=reason,
-                action_by=action_by
+                action_by=action_by.user if hasattr(action_by, "user") else action_by
             )
 
             # NOTE:
             # RBAC is currently mirrored on employee.role.
             # In future, this must update EmployeeRoleAssignment instead.
             new_role = emp.role
-            if emp.role.metadata and emp.role.metadata.get("scope") == "DEPARTMENT":
+
+            if (
+                emp.role
+                and emp.role.metadata
+                and emp.role.metadata.get("scope") == "DEPARTMENT"
+                and hasattr(emp.role, "get_fallback_role")
+            ):
                 fallback_role = emp.role.get_fallback_role()
                 if fallback_role and fallback_role != emp.role:
                     new_role = fallback_role
@@ -73,7 +78,7 @@ class LifecycleService:
                 joined_at=now,
                 movement_type=MovementType.AUTO_TRANSFER,
                 reason=f"Auto-transferred due to deactivation of {department.name}",
-                action_by=action_by
+                action_by=action_by.user if hasattr(action_by, "user") else action_by
             )
 
             summary["employees_moved"] += 1
@@ -92,7 +97,8 @@ class LifecycleService:
 
         employee_count = Employee.objects.filter(
             department=department,
-            is_active=True
+            is_deleted=False,
+            status="Active"
         ).count()
 
         return {
@@ -102,7 +108,6 @@ class LifecycleService:
 
 
     # ----------------------------------------------------------------------
-
     def _close_current_tenure(
         self,
         employee,
@@ -116,18 +121,29 @@ class LifecycleService:
             left_at__isnull=True
         ).first()
 
-        if open_tenure:
-            EmployeeDepartmentHistory.objects.create(
-                employee=employee,
-                department=open_tenure.department,
-                role=open_tenure.role,
-                designation=open_tenure.designation,
-                joined_at=open_tenure.joined_at,
-                left_at=left_at,
-                movement_type=movement_type,
-                reason=reason,
-                action_by=action_by
-            )
+        if not open_tenure:
+            return
+
+        # ❌ DO NOT update existing row
+        # ✅ Create a TERMINATION record AND logically close the tenure
+
+        EmployeeDepartmentHistory.objects.create(
+            employee=employee,
+            department=open_tenure.department,
+            role=open_tenure.role,
+            designation=open_tenure.designation,
+            joined_at=open_tenure.joined_at,
+            left_at=left_at,
+            movement_type=movement_type,
+            reason=reason,
+            action_by=action_by
+        )
+
+        # ✅ IMPORTANT: logically close the open tenure (system-level)
+        EmployeeDepartmentHistory.objects.filter(pk=open_tenure.pk).update(
+            left_at=left_at
+        )
+
 
     # ----------------------------------------------------------------------
 

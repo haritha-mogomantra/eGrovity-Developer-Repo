@@ -53,12 +53,13 @@ class CachedReport(models.Model):
         help_text="Manager reference for manager-wise reports",
     )
     department = models.ForeignKey(
-        "employee.Department",
+        "masters.Master",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="department_reports",
-        help_text="Department reference for department-wise reports",
+        limit_choices_to={"master_type": "DEPARTMENT"},
+        help_text="Department reference (Master: DEPARTMENT)",
     )
 
     # -----------------------------------------------------------
@@ -211,7 +212,11 @@ class CachedReport(models.Model):
         if self.report_type == "manager" and self.manager:
             return f"Manager: {self.manager.get_full_name()} ({self.get_period_display()})"
         elif self.report_type == "department":
-            dept_name = self.department.name if self.department else "Deactivated Department"
+            dept_name = (
+                self.department.name
+                if self.department and self.department.master_type == "DEPARTMENT"
+                else "Deactivated Department"
+            )
             return f"Department: {dept_name} ({self.get_period_display()})"
         return f"{self.report_type.title()} ({self.get_period_display()})"
 
@@ -240,6 +245,10 @@ class CachedReport(models.Model):
         elif self.report_type == "manager" and self.manager:
             return f"Manager Report — {self.manager.get_full_name()} ({self.get_period_display()})"
         elif self.report_type == "department":
-            dept_name = self.department.name if self.department else "Deactivated Department"
+            dept_name = (
+                self.department.name
+                if self.department and self.department.master_type == "DEPARTMENT"
+                else "Deactivated Department"
+            )
             return f"Department Report — {dept_name} ({self.get_period_display()})"
         return f"{self.report_type.title()} Report ({self.year})"

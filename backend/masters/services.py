@@ -21,6 +21,7 @@ class DepartmentService:
     def deactivate_department(
         self,
         department: Master,
+        target_department: Master,
         action_by,
         reason: str
     ) -> dict:
@@ -30,7 +31,7 @@ class DepartmentService:
         Rules enforced:
         - Only DEPARTMENT type allowed
         - Default department cannot be deactivated
-        - A fallback (default) department MUST exist
+        - A valid target department MUST be provided
         - Employees are auto-moved and lifecycle logged
         """
 
@@ -49,28 +50,23 @@ class DepartmentService:
         if not reason or not reason.strip():
             raise ValidationError("Deactivation reason is mandatory")
 
-        # --------------------------------------------------
-        # Resolve default department
-        # --------------------------------------------------
-        default_department = Master.objects.filter(
-            master_type=MasterType.DEPARTMENT,
-            is_default=True,
-            status=MasterStatus.ACTIVE
-        ).first()
+        if target_department.master_type != MasterType.DEPARTMENT:
+            raise ValidationError("Target must be a department")
 
-        if not default_department:
-            raise ValidationError(
-                "No active default department found. "
-                "Cannot deactivate department."
-            )
+        if target_department.status != MasterStatus.ACTIVE:
+            raise ValidationError("Target department must be active")
 
+        if target_department.id == department.id:
+            raise ValidationError("Target department must be different from source department")
+
+        
         # --------------------------------------------------
         # Move employees (delegated to lifecycle)
         # --------------------------------------------------
         lifecycle_service = LifecycleService()
         lifecycle_summary = lifecycle_service.handle_department_deactivation(
             department=department,
-            target_department=default_department,
+            target_department=target_department,
             action_by=action_by,
             reason=reason
         )
@@ -108,7 +104,7 @@ class DepartmentService:
 
         return {
             "department": department.name,
-            "moved_to": default_department.name,
+            "moved_to": target_department.name,
             "employees_moved": lifecycle_summary["employees_moved"],
             "roles_downgraded": lifecycle_summary["roles_downgraded"],
         }

@@ -10,41 +10,7 @@
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Employee, Department
-
-
-# =====================================================
-# DEPARTMENT ADMIN
-# =====================================================
-@admin.register(Department)
-class DepartmentAdmin(admin.ModelAdmin):
-    """Admin configuration for Department model."""
-
-    list_display = (
-        "id",
-        "name",
-        "employee_count",
-        "colored_status",
-        "created_at",
-        "updated_at",
-    )
-    search_fields = ("name", "description")
-    list_filter = ("is_active", "created_at")
-    ordering = ("name",)
-    readonly_fields = ("created_at", "updated_at", "employee_count")
-
-    def colored_status(self, obj):
-        """Show green if active, red if inactive."""
-        color = "green" if obj.is_active else "red"
-        status = "Active" if obj.is_active else "Inactive"
-        return format_html(f"<b><span style='color:{color};'>{status}</span></b>")
-
-    colored_status.short_description = "Status"
-
-    def get_queryset(self, request):
-        """Prefetch employees for optimized display."""
-        qs = super().get_queryset(request)
-        return qs.prefetch_related("employees")
+from .models import Employee
 
 
 # =====================================================
@@ -72,9 +38,9 @@ class EmployeeAdmin(admin.ModelAdmin):
         "user__first_name",
         "user__last_name",
         "user__email",
-        "designation",
+        "designation__name",
     )
-    list_filter = ("department", "role", "status", "joining_date")
+    list_filter = ("department", "role__name", "status", "joining_date")
     ordering = ("user__emp_id",)
     readonly_fields = ("created_at", "updated_at")
 
@@ -100,17 +66,20 @@ class EmployeeAdmin(admin.ModelAdmin):
     get_email.short_description = "Email"
 
     def colored_role(self, obj):
-        """Display role as colored badge for better visibility."""
+        role_name = obj.role.name if obj.role else "Unknown"
+
         role_colors = {
             "Admin": "#007bff",
             "Manager": "#28a745",
             "Employee": "#6c757d",
         }
-        color = role_colors.get(obj.role, "#999")
+        color = role_colors.get(role_name, "#999")
+
         return format_html(
-            f"<span style='background-color:{color}; color:white; padding:3px 8px; border-radius:4px;'>{obj.role}</span>"
+            "<span style='background-color:{}; color:white; padding:3px 8px; border-radius:4px;'>{}</span>",
+            color,
+            role_name
         )
-    colored_role.short_description = "Role"
 
     # --------------------------------------------
     # Optimization Hooks

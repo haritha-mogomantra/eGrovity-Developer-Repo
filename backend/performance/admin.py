@@ -27,7 +27,7 @@ class PerformanceEvaluationAdmin(admin.ModelAdmin):
     list_display = (
         "get_emp_id",
         "get_employee_name",
-        "department",
+        "get_department_name",
         "evaluation_type",
         "colored_score",
         "total_score",
@@ -62,7 +62,7 @@ class PerformanceEvaluationAdmin(admin.ModelAdmin):
     # -------------------------------------------------
     # Display Settings
     # -------------------------------------------------
-    ordering = ("-year", "-week_number", "-average_score")
+    ordering = ("-year", "-week_number", "-total_score")
     list_per_page = 25
     readonly_fields = ("total_score", "average_score", "created_at", "updated_at")
 
@@ -84,6 +84,12 @@ class PerformanceEvaluationAdmin(admin.ModelAdmin):
             return f"{first} {last}".strip() or obj.employee.user.username
         return "-"
     get_employee_name.short_description = "Employee Name"
+
+    def get_department_name(self, obj):
+        if obj.department:
+            return obj.department.name
+        return "-"
+    get_department_name.short_description = "Department"
 
     def colored_score(self, obj):
         """Display average score with color coding."""

@@ -73,11 +73,12 @@ class Notification(models.Model):
     # Optional Departmental Broadcast
     # =======================================================
     department = models.ForeignKey(
-        "employee.Department",
+        "masters.Master",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="notifications",
+        limit_choices_to={"master_type": "DEPARTMENT"},
         help_text="Optional: department-wide notification scope.",
     )
 

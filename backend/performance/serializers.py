@@ -5,7 +5,8 @@ from rest_framework import serializers
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from .models import PerformanceEvaluation
-from employee.models import Department, Employee
+from employee.models import Employee
+from masters.models import Master
 from .models import is_latest_completed_week
 
 User = get_user_model()
@@ -27,13 +28,24 @@ class SimpleUserSerializer(serializers.ModelSerializer):
 
 class SimpleDepartmentSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Department
+        model = Master
         fields = ["id", "name"]
+
+    def to_representation(self, instance):
+        if instance.master_type != "DEPARTMENT":
+            return None
+        return super().to_representation(instance)
 
 
 class SimpleEmployeeSerializer(serializers.ModelSerializer):
     user = SimpleUserSerializer(read_only=True)
-    department_name = serializers.CharField(source="department.name", read_only=True)
+    department_name = serializers.SerializerMethodField()
+
+    def get_department_name(self, obj):
+        if obj.department and obj.department.master_type == "DEPARTMENT":
+            return obj.department.name
+        return None
+
     full_name = serializers.SerializerMethodField(read_only=True)
     manager_name = serializers.SerializerMethodField()
 
@@ -84,7 +96,11 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
         return {
             "emp_id": u.emp_id,
             "full_name": f"{u.first_name} {u.last_name}".strip(),
-            "department_name": emp.department.name if emp.department else None,
+            "department_name": (
+                emp.department.name
+                if emp.department and emp.department.master_type == "DEPARTMENT"
+                else None
+            ),
             "manager_name": (
                 f"{emp.manager.user.first_name} {emp.manager.user.last_name}".strip()
                 if emp.manager and emp.manager.user else "-"
@@ -173,7 +189,9 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
 
     # ---------- CUSTOM FIELDS (department, employee, evaluator) ----------
     def get_department_name(self, obj):
-        return obj.department.name if obj.department else None
+        if obj.department and obj.department.master_type == "DEPARTMENT":
+            return obj.department.name
+        return None
 
     def get_employee_name(self, obj):
         if obj.employee and obj.employee.user:
@@ -221,12 +239,11 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         emp_id = validated_data.pop("employee_emp_id", None)
 
-        from employee.models import Employee
         employee = None
 
         if emp_id:
             try:
-                employee = Employee.objects.get(emp_id=emp_id)
+                employee = Employee.objects.select_related("user").get(user__emp_id__iexact=emp_id)
             except Employee.DoesNotExist:
                 raise serializers.ValidationError({"employee_emp_id": f"Employee ID '{emp_id}' not found."})
 
@@ -244,7 +261,7 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
             evaluation_type=evaluation_type,
         ).exists():
             raise serializers.ValidationError({
-                "duplicate": f"Evaluation already exists for {employee.emp_id} (Week {week}, {year}, {evaluation_type})."
+                "duplicate": f"Evaluation already exists for {employee.user.emp_id} (Week {week}, {year}, {evaluation_type})."
             })
 
         return super().create(validated_data)
@@ -255,9 +272,8 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
         metrics_data = self.initial_data.get("metrics", {})
 
         if emp_id:
-            from employee.models import Employee
             try:
-                validated_data["employee"] = Employee.objects.get(emp_id=emp_id)
+                validated_data["employee"] = Employee.objects.select_related("user").get(user__emp_id__iexact=emp_id)
             except Employee.DoesNotExist:
                 raise serializers.ValidationError({"employee_emp_id": f"Employee ID '{emp_id}' not found."})
 
@@ -287,9 +303,10 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
             if user else None
         )
 
-        rep["department_name"] = (
-            emp.department.name if emp and emp.department else None
-        )
+        if emp and emp.department and emp.department.master_type == "DEPARTMENT":
+            rep["department_name"] = emp.department.name
+        else:
+            rep["department_name"] = None
 
         # Manager fetch (fully dynamic)
         if emp and emp.manager and emp.manager.user:
@@ -638,7 +655,13 @@ class PerformanceDashboardSerializer(serializers.ModelSerializer):
     emp_id = serializers.ReadOnlyField(source="employee.user.emp_id")
     employee_name = serializers.SerializerMethodField()
     manager_name = serializers.SerializerMethodField()
-    department_name = serializers.ReadOnlyField(source="department.name")
+    department_name = serializers.SerializerMethodField()
+
+    def get_department_name(self, obj):
+        if obj.department and obj.department.master_type == "DEPARTMENT":
+            return obj.department.name
+        return None
+    
     score_display = serializers.SerializerMethodField()
     
 
@@ -668,7 +691,13 @@ class PerformanceDashboardSerializer(serializers.ModelSerializer):
 class PerformanceRankSerializer(serializers.ModelSerializer):
     emp_id = serializers.ReadOnlyField(source="employee.user.emp_id")
     full_name = serializers.SerializerMethodField()
-    department_name = serializers.ReadOnlyField(source="department.name")
+    department_name = serializers.SerializerMethodField()
+
+    def get_department_name(self, obj):
+        if obj.department and obj.department.master_type == "DEPARTMENT":
+            return obj.department.name
+        return None
+
     score_display = serializers.SerializerMethodField()
     
 

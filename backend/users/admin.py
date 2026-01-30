@@ -31,7 +31,6 @@ class UserAdmin(BaseUserAdmin):
         "get_full_name",
         "email",
         "get_department",
-        "colored_role",
         "is_active",
         "account_locked",
         "failed_login_attempts",
@@ -45,7 +44,6 @@ class UserAdmin(BaseUserAdmin):
     # Filters (Sidebar)
     # ------------------------------------------------------
     list_filter = (
-        "role",
         "department",
         "is_active",
         "account_locked",
@@ -63,7 +61,6 @@ class UserAdmin(BaseUserAdmin):
         "email",
         "first_name",
         "last_name",
-        "role",
         "department__name",
     )
 
@@ -104,7 +101,6 @@ class UserAdmin(BaseUserAdmin):
             _("Role & Access"),
             {
                 "fields": (
-                    "role",
                     "is_verified",
                     "is_active",
                     "is_staff",
@@ -147,7 +143,6 @@ class UserAdmin(BaseUserAdmin):
                     "last_name",
                     "phone",
                     "department",
-                    "role",
                     "password",
                     "is_active",
                 ),
@@ -164,11 +159,21 @@ class UserAdmin(BaseUserAdmin):
     get_full_name.short_description = "Full Name"
 
     def colored_role(self, obj):
-        """Display role with color coding in admin list."""
-        color_map = {"Admin": "green", "Manager": "orange", "Employee": "blue"}
-        color = color_map.get(obj.role, "black")
-        return format_html(f"<b><span style='color:{color}'>{obj.role}</span></b>")
-    colored_role.short_description = "Role"
+        employee = getattr(obj, "employee_profile", None)
+        role_name = employee.role.name if employee and employee.role else "—"
+
+        color_map = {
+            "Admin": "green",
+            "Manager": "orange",
+            "Employee": "blue",
+        }
+        color = color_map.get(role_name, "black")
+
+        return format_html(
+            "<b><span style='color:{}'>{}</span></b>",
+            color,
+            role_name
+        )
 
     def get_department(self, obj):
         """Show department name if assigned."""

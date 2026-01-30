@@ -57,5 +57,4 @@ urlpatterns = [
     path("regenerate-password/<str:emp_id>/", regenerate_password, name="regenerate_password"),
     path("login-details/", AdminUserListView.as_view(), name="login_details"),
     path("<str:emp_id>/", UserDetailView.as_view(), name="user_detail"),
-    path("employee/<str:emp_id>/", views.get_employee_by_id, name="get-employee-by-id"),
 ]

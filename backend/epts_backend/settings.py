@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     "performance",
     "reports",
     "notifications",
-    'feedback.apps.FeedbackConfig',
     "masters",
     "employee_lifecycle",
 ]
@@ -93,17 +92,23 @@ WSGI_APPLICATION = "epts_backend.wsgi.application"
 import pymysql
 pymysql.install_as_MySQLdb()
 
-'''DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'epts_project_db',
-        'USER': 'mogomantra',
-        'PASSWORD': 'Mogo@12345',
-        'HOST': '100.93.35.95',
-        'PORT': '3306',
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": "epts_project_db",
+        "USER": "mogo-employee",
+        "PASSWORD": "Employee@12345",
+        "HOST": "100.103.43.76",   # Tailscale server IP
+        "PORT": "3306",
+        "OPTIONS": {
+            "charset": "utf8mb4",
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     }
-}'''
+}
 
+
+'''
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
@@ -114,7 +119,7 @@ DATABASES = {
         'PORT': '3306',
     }
 }
-
+'''
 
 # -------------------------------------------------------------------
 # CUSTOM USER MODEL

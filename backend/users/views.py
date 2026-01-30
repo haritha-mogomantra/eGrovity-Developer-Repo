@@ -11,7 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django.db import transaction, models
+from django.db import transaction
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from django.conf import settings
@@ -22,7 +22,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import re
 
-from employee.models import Employee, Department
 from .serializers import (
     CustomTokenObtainPairSerializer,
     RegisterSerializer,
@@ -34,18 +33,23 @@ from .serializers import (
 
 User = get_user_model()
 
+def resolve_role(user):
+    if user.is_superuser or user.is_staff:
+        return "admin"
+    return "employee"
+
 
 # ===========================================================
 # HELPER PERMISSION FUNCTIONS
 # ===========================================================
 def is_admin(user):
-    return user.is_superuser or getattr(user, "role", "").lower() == "admin"
+    return resolve_role(user) == "admin"
 
 def is_manager(user):
-    return getattr(user, "role", "").lower() == "manager"
+    return False  # manager role not implemented yet
 
 def is_admin_or_manager(user):
-    return user.is_superuser or getattr(user, "role", "").lower() in ["admin", "manager"]
+    return is_admin(user)
 
 
 # ===========================================================
@@ -68,7 +72,7 @@ class ObtainTokenPairView(TokenObtainPairView):
         response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response["Access-Control-Allow-Credentials"] = "true"
         response["Access-Control-Max-Age"] = "86400"
-        
+
         return response
 
     def post(self, request, *args, **kwargs):
@@ -126,9 +130,7 @@ class ObtainTokenPairView(TokenObtainPairView):
 
         emp_id = user.emp_id
         username = user.username
-        role = user.role
-
-        origin = request.META.get('HTTP_ORIGIN', 'http://localhost:3001')
+        role = resolve_role(user)
 
         return Response(
             {
@@ -155,11 +157,6 @@ class ObtainTokenPairView(TokenObtainPairView):
             },
             status=status.HTTP_200_OK,
         )
-
-        response["Access-Control-Allow-Origin"] = origin
-        response["Access-Control-Allow-Credentials"] = "true"
-        
-        return response
 
 # ===========================================================
 # 2. REFRESH TOKEN
@@ -200,37 +197,6 @@ class RegisterView(generics.CreateAPIView):
             user.save(update_fields=["joining_date"])
 
         # -----------------------------------------------------------
-        # Employee Auto-Sync (Safe get_or_create)
-        # -----------------------------------------------------------
-        emp_defaults = {
-            "department": user.department,
-            "role": getattr(user, "role", "Employee"),
-            "status": "Active" if user.is_active else "Inactive",
-            "joining_date": user.joining_date or timezone.now().date(),
-        }
-
-        # Resolve manager (Employee instance)
-        if getattr(user, "manager", None):
-            mgr_emp = Employee.objects.filter(user=user.manager, is_deleted=False).first()
-            if mgr_emp:
-                emp_defaults["manager"] = mgr_emp
-
-        employee_obj, created = Employee.objects.get_or_create(
-            user=user,
-            defaults=emp_defaults
-        )
-
-        # If previously soft-deleted → restore
-        if not created and getattr(employee_obj, "is_deleted", False):
-            employee_obj.is_deleted = False
-            employee_obj.status = emp_defaults["status"]
-            employee_obj.department = emp_defaults["department"]
-            employee_obj.role = emp_defaults["role"]
-            employee_obj.manager = emp_defaults.get("manager")
-            employee_obj.joining_date = emp_defaults["joining_date"]
-            employee_obj.save(update_fields=["is_deleted", "status", "department", "role", "manager", "joining_date"])
-
-        # -----------------------------------------------------------
         # Send Email Notification (optional)
         # -----------------------------------------------------------
         try:
@@ -249,9 +215,9 @@ class RegisterView(generics.CreateAPIView):
                 fail_silently=True,
             )
         except Exception as e:
-            logger.warning(f"Email send failed for {user.emp_id}: {e}")
+            print(f"[WARN] Email send failed for {user.emp_id}: {e}")
 
-        logger.info(f"User {user.emp_id} registered by {current_user.emp_id}")
+        print(f"[INFO] User {user.emp_id} registered by {current_user.emp_id}")
 
         return Response(
             {
@@ -397,8 +363,12 @@ class RoleListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response({"roles": [r for r, _ in User.ROLE_CHOICES]}, status=200)
-
+        return Response(
+            {
+                "roles": ["admin", "employee"]
+            },
+            status=200
+        )
 
 # ===========================================================
 # 7. USER LIST (Admin Only)
@@ -410,7 +380,7 @@ class UserPagination(PageNumberPagination):
 
 
 class UserListView(generics.ListAPIView):
-    queryset = User.objects.select_related("department", "manager").order_by("emp_id")
+    queryset = User.objects.select_related("department").order_by("emp_id")
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -503,27 +473,21 @@ class UserDetailView(APIView):
         if not user:
             return Response({"error": "User not found."}, status=404)
 
-        editable_fields = ["first_name", "last_name", "email", "phone", "is_verified", "is_active", "department", "manager"]
+        editable_fields = [
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "is_verified",
+            "is_active",
+            "department",
+            "designation",
+        ]
         updates = {f: v for f, v in request.data.items() if f in editable_fields}
-
-        # Manager handling
-        if "manager" in updates:
-            mgr_val = updates.pop("manager")
-            manager = User.objects.filter(emp_id__iexact=mgr_val).first() or User.objects.filter(username__iexact=mgr_val).first()
-            if not manager:
-                return Response({"error": f"Manager '{mgr_val}' not found."}, status=400)
-            updates["manager"] = manager
 
         for f, v in updates.items():
             setattr(user, f, v)
         user.save(update_fields=list(updates.keys()))
-
-        # Reflect updates in Employee table
-        Employee.objects.filter(user=user).update(
-            department=user.department,
-            manager=user.manager,
-            status="Active" if user.is_active else "Inactive"
-        )
 
         return Response({"message": "User updated successfully.", "user": ProfileSerializer(user).data}, status=200)
 
@@ -538,12 +502,11 @@ class UserDetailView(APIView):
             return Response({"error": "User not found."}, status=404)
         if user == admin:
             return Response({"error": "You cannot deactivate your own account."}, status=400)
-        if user.role == "Admin":
+        if resolve_role(user) == "admin":
             return Response({"error": "Cannot deactivate another Admin account."}, status=400)
 
         user.is_active = False
         user.save(update_fields=["is_active"])
-        Employee.objects.filter(user=user).update(status="Inactive")
 
         return Response({"message": f"User '{emp_id}' deactivated successfully."}, status=200)
 
@@ -553,7 +516,7 @@ class UserDetailView(APIView):
 # 10. ADMIN — REGENERATE PASSWORD (Console or Email)
 # ===========================================================
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAdminUser])  
 @transaction.atomic
 def regenerate_password(request, emp_id=None):
     """
@@ -668,21 +631,15 @@ class AdminUserListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     pagination_class = UserPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["username", "emp_id", "email", "first_name", "last_name", "role"]
-    ordering_fields = ["emp_id", "role", "date_joined", "last_login"]
+    search_fields = ["username", "emp_id", "email", "first_name", "last_name"]
+    ordering_fields = ["emp_id", "date_joined", "last_login"]
 
 
     def get_queryset(self):
-        """
-        Return active users who have a NON-deleted Employee profile.
-        """
         return (
             User.objects
-            .select_related("department", "employee_profile")
-            .filter(
-                is_active=True,
-                employee_profile__is_deleted=False  # <-- correct related_name
-            )
+            .select_related("department")
+            .filter(is_active=True)
             .order_by("emp_id")
         )
 
@@ -697,67 +654,3 @@ class AdminUserListView(generics.ListAPIView):
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
-
-
-
-
-# ===========================================================
-# GET EMPLOYEE DETAILS BY EMP_ID  (For Performance Module)
-# ===========================================================
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from rest_framework.response import Response
-# make sure Employee is already imported: from employee.models import Employee, Department
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def get_employee_by_id(request, emp_id):
-    """
-    GET /api/employees/employee/<emp_id>/
-    Full Employee Profile Response
-    """
-    try:
-        employee = Employee.objects.select_related("user", "department", "manager").get(
-            user__emp_id__iexact=emp_id
-        )
-
-        user = employee.user
-
-        return Response({
-            # PERSONAL DETAILS
-            "emp_id": employee.emp_id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "email": user.email,
-            "gender": employee.gender,
-            "contact_number": employee.contact_number,
-            "dob": employee.dob,
-            "profile_picture_url": (
-                request.build_absolute_uri(employee.profile_picture.url)
-                if employee.profile_picture else None
-            ),
-
-            # PROFESSIONAL DETAILS
-            "role": employee.role,
-            "department": employee.department.name if employee.department else None,
-            "designation": employee.designation,
-            "project_name": employee.project_name,
-            "joining_date": employee.joining_date,
-            "manager_name": (
-                employee.manager.user.get_full_name()
-                if employee.manager and employee.manager.user else None
-            ),
-            "reporting_manager_name": employee.reporting_manager_name,
-
-            # ADDRESS DETAILS
-            "address_line1": employee.address_line1,
-            "address_line2": employee.address_line2,
-            "city": employee.city,
-            "state": employee.state,
-            "pincode": employee.pincode,
-
-        }, status=200)
-
-    except Employee.DoesNotExist:
-        return Response({"error": "Employee not found."}, status=404)

@@ -48,7 +48,6 @@ urlpatterns = [
     path("api/users/", include("users.urls")),
     path("api/employee/", include("employee.urls")),
     path("api/performance/", include("performance.urls")),
-    path("api/feedback/", include("feedback.urls", namespace="feedback")),
     path("api/reports/", include("reports.urls", namespace="reports")),
     path("api/notifications/", include("notifications.urls", namespace="notifications")),
     path("api/masters/", include("masters.urls", namespace="masters")),

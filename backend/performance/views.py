@@ -5,12 +5,10 @@ from rest_framework import viewsets, permissions, status, filters
 from users.views import is_admin_or_manager
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Max, F, Avg, Window, Count, Q
-from django.db.models.functions import Rank, DenseRank
+from django.db.models import Max, F, Avg, Window, Q
+from django.db.models.functions import DenseRank
 from django.db import IntegrityError
-from django.utils import timezone
 from .models import PerformanceEvaluation
 from .serializers import (
     PerformanceEvaluationSerializer,
@@ -18,7 +16,8 @@ from .serializers import (
     PerformanceDashboardSerializer,
     PerformanceRankSerializer,
 )
-from employee.models import Employee, Department
+from employee.models import Employee
+from masters.models import Master
 from notifications.models import Notification
 from datetime import date
 from .models import get_week_range
@@ -181,9 +180,13 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
                     "evaluation_id": instance.id,
                     "emp_id": instance.employee.user.emp_id,
                     "employee_name": f"{instance.employee.user.first_name} {instance.employee.user.last_name}".strip(),
-                    "department_name": getattr(instance.department, "name", None),
+                    "department_name": (
+                        instance.department.name
+                        if instance.department and instance.department.master_type == "DEPARTMENT"
+                        else None
+                    ),
 
-                    # ⭐ These were stale before — now corrected
+                    #  These were stale before — now corrected
                     "total_score": instance.total_score,
                     "average_score": instance.average_score,
                     "evaluation_period": instance.evaluation_period,
@@ -209,7 +212,12 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
         data["rank"] = instance.rank
 
         # Ensure department name appears
-        data["department_name"] = getattr(instance.employee.department, "name", None)
+        data["department_name"] = (
+            instance.employee.department.name
+            if instance.employee.department
+            and instance.employee.department.master_type == "DEPARTMENT"
+            else None
+        )
 
         # Ensure employee name appears
         if instance.employee and instance.employee.user:
@@ -278,7 +286,11 @@ class EmployeePerformanceByIdView(APIView):
                     "employee": {
                         "emp_id": emp.user.emp_id,
                         "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-                        "department_name": getattr(emp.department, "name", "-"),
+                        "department_name": (
+                            emp.department.name
+                            if emp.department and emp.department.master_type == "DEPARTMENT"
+                            else "-"
+                        )
                     },
                     "record_count": 0,
                     "evaluations": []
@@ -293,7 +305,11 @@ class EmployeePerformanceByIdView(APIView):
                 "employee": {
                     "emp_id": emp.user.emp_id,
                     "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-                    "department_name": getattr(emp.department, "name", "-"),
+                    "department_name": (
+                        emp.department.name
+                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        else "-"
+                    )
                 },
                 "record_count": qs.count(),
                 "evaluations": serializer.data,
@@ -343,7 +359,10 @@ class PerformanceSummaryView(APIView):
 
             # ✅ APPLY DEPARTMENT FILTER FIRST
             if dept_name and dept_name.lower() != "all":
-                base_qs = base_qs.filter(department__name=dept_name)
+                base_qs = base_qs.filter(
+                    department__master_type="DEPARTMENT",
+                    department__name=dept_name
+                )
 
             # ✅ CALCULATE RANK ONLY FOR PRESENT EMPLOYEES
             ranked_qs = (
@@ -373,7 +392,10 @@ class PerformanceSummaryView(APIView):
                     Q(employee__user__last_name__icontains=search) |
                     Q(employee__designation__icontains=search) |
                     Q(employee__project_name__icontains=search) |
-                    Q(employee__department__name__icontains=search) |
+                    Q(
+                        employee__department__master_type="DEPARTMENT",
+                        employee__department__name__icontains=search
+                    ) |
                     Q(employee__manager__user__first_name__icontains=search) |
                     Q(employee__manager__user__last_name__icontains=search) |
                     Q(employee__status__icontains=search)
@@ -442,7 +464,10 @@ class PerformanceSummaryView(APIView):
 
             # ✅ APPLY DEPARTMENT FILTER FIRST
             if dept_name and dept_name.lower() != "all":
-                base_qs = base_qs.filter(department__name=dept_name)
+                base_qs = base_qs.filter(
+                    department__master_type="DEPARTMENT",
+                    department__name=dept_name
+                )
 
             # ✅ CALCULATE RANK ONLY FOR PRESENT EMPLOYEES
             ranked_qs = (
@@ -473,7 +498,10 @@ class PerformanceSummaryView(APIView):
                     Q(employee__user__last_name__icontains=search) |
                     Q(employee__designation__icontains=search) |
                     Q(employee__project_name__icontains=search) |
-                    Q(employee__department__name__icontains=search) |
+                    Q(
+                        employee__department__master_type="DEPARTMENT",
+                        employee__department__name__icontains=search
+                    ) |
                     Q(employee__manager__user__first_name__icontains=search) |
                     Q(employee__manager__user__last_name__icontains=search) |
                     Q(employee__status__icontains=search)
@@ -663,7 +691,11 @@ class EmployeePerformanceView(APIView):
         header = {
             "emp_id": emp.user.emp_id,
             "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-            "department_name": getattr(emp.department, "name", None),
+            "department_name": (
+                emp.department.name
+                if emp.department and emp.department.master_type == "DEPARTMENT"
+                else "-"
+            ),
             "manager_name": (
                 f"{emp.manager.user.first_name} {emp.manager.user.last_name}".strip()
                 if emp.manager else None
@@ -699,12 +731,17 @@ class PerformanceDashboardView(APIView):
                 return Response({"message": "No performance data available."}, status=status.HTTP_200_OK)
 
             total_employees = evaluations.values("employee").distinct().count()
-            total_departments = Department.objects.filter(is_active=True).count()
+            total_departments = Master.objects.filter(
+                master_type="DEPARTMENT",
+                is_active=True
+            ).count()
             org_avg = round(evaluations.aggregate(avg=Avg("average_score"))["avg"] or 0, 2)
 
             # Department averages
             dept_scores = (
-                evaluations.values("department__name")
+                evaluations.filter(
+                    department__master_type="DEPARTMENT"
+                ).values("department__name")
                 .annotate(avg_score=Avg("average_score"))
                 .order_by("-avg_score")
             )
@@ -719,11 +756,13 @@ class PerformanceDashboardView(APIView):
 
             # Top and weak performers
             employee_scores = (
-                evaluations.values(
+                evaluations.filter(
+                    department__master_type="DEPARTMENT"
+                ).values(
                     "employee__user__emp_id",
                     "employee__user__first_name",
                     "employee__user__last_name",
-                    "employee__department__name",
+                    "department__name",
                 )
                 .annotate(avg_score=Avg("average_score"))
                 .order_by("-avg_score")
@@ -733,7 +772,7 @@ class PerformanceDashboardView(APIView):
                 {
                     "emp_id": e["employee__user__emp_id"],
                     "name": f"{e['employee__user__first_name']} {e['employee__user__last_name']}".strip(),
-                    "department": e["employee__department__name"],
+                    "department": e["department__name"],
                     "average_score": round(e["avg_score"], 2),
                 }
                 for e in employee_scores[:3]
@@ -938,7 +977,11 @@ class EligiblePerformanceEmployeesAPIView(APIView):
             data.append({
                 "emp_id": emp.user.emp_id,
                 "full_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-                "department_name": emp.department.name if emp.department else "",
+                "department_name": (
+                    emp.department.name
+                    if emp.department and emp.department.master_type == "DEPARTMENT"
+                    else ""
+                ),
                 "manager_name": (
                     f"{emp.manager.user.first_name} {emp.manager.user.last_name}".strip()
                     if emp.manager and emp.manager.user else "Not Assigned"
@@ -946,4 +989,3 @@ class EligiblePerformanceEmployeesAPIView(APIView):
             })
 
         return Response(data, status=200)
-

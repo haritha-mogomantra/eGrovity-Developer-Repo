@@ -82,11 +82,12 @@ class PerformanceEvaluation(models.Model):
         help_text="Admin, Manager, or Client who gave the evaluation.",
     )
     department = models.ForeignKey(
-        "employee.Department",
+        "masters.Master",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="department_performances",
+        limit_choices_to={"master_type": "DEPARTMENT"},
         help_text="Department under which the evaluation is recorded.",
     )
 

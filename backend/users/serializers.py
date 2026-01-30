@@ -10,9 +10,9 @@ from django.utils.crypto import get_random_string
 from django.core.mail import send_mail              
 from django.conf import settings                
 from django.utils import timezone
-import random, string, re
+import re
 from datetime import datetime, date
-from employee.models import Department, Employee
+from masters.models import Master, MasterType
 from users.models import generate_strong_password
 
 User = get_user_model()
@@ -133,7 +133,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                     "emp_id": user.emp_id,
                     "username": user.username,
                     "email": user.email,
-                    "role": user.role,
+                    "designation": user.designation,
                 },
             }
 
@@ -198,16 +198,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "emp_id": user.emp_id,
                 "username": user.username,
                 "email": user.email,
-                "role": user.role.lower() if user.role else "",
                 "first_name": user.first_name or "",
                 "last_name": user.last_name or "",
                 "full_name": f"{user.first_name} {user.last_name}".strip(),
                 "department": user.department.name if user.department else None,
-                "manager": user.manager.username if user.manager else None,
+                "designation": user.designation,
                 "status": user.status,
                 "is_verified": getattr(user, "is_verified", False),
                 "is_active": user.is_active,
-            },
+            }
         }
         self.user = user
         return data
@@ -216,7 +215,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def get_token(cls, user):
         token = super().get_token(user)
         token["emp_id"] = user.emp_id
-        token["role"] = user.role
         return token
 
 
@@ -231,8 +229,8 @@ class RegisterSerializer(serializers.ModelSerializer):
     # Accept flexible department fields
     department = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     department_name_input = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    manager = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     joining_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    designation = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = User
@@ -247,10 +245,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             "department",
             "department_name_input",
             "department_name",
-            "manager",
+            "designation",
             "phone",
-            "role",
-            "status",
             "joining_date",
             "temp_password",
         ]
@@ -286,9 +282,8 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get("request")
         if request and hasattr(request, "user"):
-            role = getattr(request.user, "role", "")
-            if not (request.user.is_superuser or role in ["Admin", "Manager"]):
-                raise serializers.ValidationError({"permission": "Only Admin or Manager can create users."})
+            if not request.user.is_staff:
+                raise serializers.ValidationError({"permission": "Only staff can create users."})
         return attrs
 
     # ---------------- CREATE USER ----------------
@@ -299,8 +294,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             or validated_data.pop("department_code", None)
             or validated_data.pop("department_name_input", None)
         )
-        manager_value = validated_data.pop("manager", None)
         joining_date_value = validated_data.pop("joining_date", None)
+        designation_value = validated_data.pop("designation", None)
 
         joining_date = None
         if joining_date_value:
@@ -310,48 +305,18 @@ class RegisterSerializer(serializers.ModelSerializer):
         if not dept_value:
             raise serializers.ValidationError({"department": "Department is required."})
         dept_value = str(dept_value).strip()
-        department_instance = Department.objects.filter(
+        department_instance = Master.objects.filter(
+            master_type=MasterType.DEPARTMENT,
             name__iexact=dept_value,
-            is_active=True
+            status="Active"
         ).first()
+
         if not department_instance:
             raise serializers.ValidationError({"department": f"Department '{dept_value}' not found."})
-        if not getattr(department_instance, "is_active", True):
-            raise serializers.ValidationError({"department": f"Department '{department_instance.name}' is inactive."})
-
-        # Resolve Manager (active, not deleted, valid role)
-        manager_employee = None
-        if manager_value:
-            manager_value = str(manager_value).strip()
-            manager_user = (
-                User.objects.filter(emp_id__iexact=manager_value).first()
-                or User.objects.filter(username__iexact=manager_value).first()
+        if department_instance.status != "Active":
+            raise serializers.ValidationError(
+                {"department": f"Department '{department_instance.name}' is inactive."}
             )
-            if not manager_user:
-                raise serializers.ValidationError({"manager": f"Manager '{manager_value}' not found as User."})
-
-            manager_employee = Employee.objects.filter(user=manager_user).first()
-            if manager_employee and getattr(manager_employee, "is_deleted", False):
-                raise serializers.ValidationError({
-                    "manager": f"Manager '{manager_user.username}' exists but is deleted. Cannot assign deleted manager."
-                })
-            if not manager_employee:
-                if manager_user.role not in ["Manager", "Admin"]:
-                    raise serializers.ValidationError({
-                        "manager": f"Manager '{manager_user.username}' must have role 'Manager' or 'Admin'."
-                    })
-                if not manager_user.is_active:
-                    raise serializers.ValidationError({
-                        "manager": f"Manager '{manager_user.username}' is inactive and cannot be assigned."
-                    })
-                manager_employee = Employee.objects.create(
-                    user=manager_user,
-                    department=manager_user.department,
-                    manager=None,
-                    role=manager_user.role,
-                    status="Active",
-                    joining_date=getattr(manager_user, "joining_date", timezone.now().date()),
-                )
 
         new_emp_id = validated_data.get("emp_id")
         if not new_emp_id:
@@ -364,23 +329,13 @@ class RegisterSerializer(serializers.ModelSerializer):
             emp_id=new_emp_id,
             password=temp_password,
             department=department_instance,
-            manager=manager_user if manager_value else None,
+            designation=designation_value,
             **validated_data,
         )
         user.force_password_change = True
         if joining_date:
             user.joining_date = joining_date
         user.save()
-
-        # Create Employee
-        emp_kwargs = {
-            "user": user,
-            "department": department_instance,
-            "manager": manager_employee,
-            "status": "Active",
-            "joining_date": joining_date or timezone.now().date(),
-        }
-        Employee.objects.create(**emp_kwargs)
 
         user.temp_password = temp_password
         return user
@@ -391,8 +346,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         rep["temp_password"] = getattr(instance, "temp_password", None)
         if instance.department:
             rep["department"] = instance.department.name
-        if instance.manager:
-            rep["manager"] = instance.manager.username
+        rep["designation"] = instance.designation
         return rep
 
 
@@ -440,9 +394,9 @@ class ChangePasswordSerializer(serializers.Serializer):
 # ===========================================================
 class ProfileSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source="department.name", read_only=True)
+    designation = serializers.CharField(read_only=True)
     full_name = serializers.SerializerMethodField(read_only=True)
     joining_date = serializers.SerializerMethodField(read_only=True)
-    manager = serializers.CharField(source="manager.username", read_only=True)
 
     class Meta:
         model = User
@@ -454,12 +408,10 @@ class ProfileSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "full_name",
-            "role",
             "department",
             "department_name",
-            "manager",
+            "designation",
             "phone",
-            "status",
             "joining_date",
             "is_verified",
             "is_active",
@@ -471,7 +423,6 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email",
             "full_name",
             "department_name",
-            "manager",
             "joining_date",
             "is_verified",
             "is_active",
@@ -485,12 +436,11 @@ class ProfileSerializer(serializers.ModelSerializer):
         return jd.isoformat() if hasattr(jd, "isoformat") else jd
 
     def update(self, instance, validated_data):
-        for field in ["first_name", "last_name", "department", "phone", "status", "role"]:
+        for field in ["first_name", "last_name", "department", "designation", "phone"]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
         instance.save()
         return instance
-
 
 
 class RegeneratePasswordSerializer(serializers.Serializer):
@@ -583,6 +533,7 @@ class RegeneratePasswordSerializer(serializers.Serializer):
 class LoginDetailsSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     department = serializers.CharField(source="department.name", read_only=True)
+    designation = serializers.CharField(read_only=True)
     last_login = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", allow_null=True)
     date_joined = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S")
     temp_password = serializers.SerializerMethodField(read_only=True)
@@ -594,8 +545,8 @@ class LoginDetailsSerializer(serializers.ModelSerializer):
             "full_name",
             "username",
             "email",
-            "role",
             "department",
+            "designation",
             "status",
             "is_active",
             "last_login",
@@ -615,6 +566,6 @@ class LoginDetailsSerializer(serializers.ModelSerializer):
         if settings.DEBUG:
             return obj.temp_password
         if request and hasattr(request, "user"):
-            if request.user.is_staff or getattr(request.user, "role", "") in ["Admin", "Manager"]:
+            if request.user.is_staff:
                 return obj.temp_password
         return None

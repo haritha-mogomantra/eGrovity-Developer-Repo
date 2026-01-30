@@ -9,6 +9,7 @@ from .models import Master, MasterAuditLog
 @admin.register(Master)
 class MasterAdmin(admin.ModelAdmin):
     """Admin interface for Master model"""
+    actions = None
     
     list_display = [
         'id', 'master_type', 'name', 'code', 'status_badge', 
@@ -17,7 +18,18 @@ class MasterAdmin(admin.ModelAdmin):
     list_filter = ['master_type', 'status', 'is_system', 'created_at']
     search_fields = ['name', 'description', 'code']
     ordering = ['master_type', 'display_order', 'name']
-    readonly_fields = ['created_by', 'created_at', 'updated_by', 'updated_at']
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj:
+            return ['master_type', 'created_by', 'created_at', 'updated_by', 'updated_at']
+        return ['created_by', 'created_at', 'updated_by', 'updated_at']
+    
+    def get_fields(self, request, obj=None):
+        fields = list(super().get_fields(request, obj))
+        if not request.user.is_superuser and 'is_system' in fields:
+            fields.remove('is_system')
+        return fields
+
     
     fieldsets = (
         ('Basic Information', {
@@ -73,6 +85,11 @@ class MasterAdmin(admin.ModelAdmin):
         if obj and obj.is_system:
             return False
         return super().has_delete_permission(request, obj)
+    
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.is_system:
+            return False
+        return super().has_change_permission(request, obj)
 
 
 @admin.register(MasterAuditLog)

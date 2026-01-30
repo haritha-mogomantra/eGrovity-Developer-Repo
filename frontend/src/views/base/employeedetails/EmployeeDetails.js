@@ -122,7 +122,13 @@ function EmployeeTables() {
       const res = await fetch(url, { headers: authHeaders });
       const data = await res.json();
 
-      setEmployees(data.results || []);
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data.results)
+        ? data.results
+        : [];
+
+      setEmployees(list);
       setTotalPages(data.total_pages || Math.ceil((data.count || 0) / pageSize));
       setCurrentPage(data.current_page || page);
       setTotalRecords(data.count || 0);
@@ -144,7 +150,13 @@ function EmployeeTables() {
 
       const data = await res.json();
 
-      setEmployees(data.results || []);
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data.results)
+        ? data.results
+        : [];
+
+      setEmployees(list);
       setTotalPages(data.total_pages || Math.ceil((data.count || 0) / pageSize));
       setSearchPage(page);
       setTotalRecords(data.count || 0);
@@ -166,9 +178,16 @@ function EmployeeTables() {
         });
         const data = await res.json();
 
-        if (!data.results || data.results.length === 0) break;
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data.results)
+          ? data.results
+          : [];
 
-        allEmployees = [...allEmployees, ...data.results];
+        if (list.length === 0) break;
+
+        allEmployees = [...allEmployees, ...list];
+
         if (!data.next) break;
         page++;
       }

@@ -125,7 +125,6 @@ def generate_employee_performance_pdf(employee, evaluations, week=None):
     pdf.setFont("Helvetica-Bold", 12)
     pdf.drawString(50, y - 15, f"Total Evaluations: {count}")
     pdf.drawString(250, y - 15, f"Overall Average Score: {overall_avg}")
-    pdf.drawString(450, y - 15, f"Feedback Avg: {getattr(employee, 'latest_feedback_avg', 0)}")
 
     # -----------------------------------------------------------
     # FOOTER

@@ -8,8 +8,7 @@ from .models import (
     MasterAuditLog,
     MasterType,
     MasterStatus,
-    ProjectDetails,
-    EmployeeRoleAssignment
+    ProjectDetails
 )
 from django.conf import settings
 import re
@@ -198,37 +197,6 @@ class MasterCreateUpdateSerializer(serializers.ModelSerializer):
         code = attrs.get('code')
         parent = attrs.get('parent')
         
-        # Check for case-insensitive duplicates
-        if master_type and name:
-            query = Master.objects.filter(
-                master_type=master_type,
-                name__iexact=name,
-                status=MasterStatus.ACTIVE
-            )
-            
-            if self.instance:
-                query = query.exclude(pk=self.instance.pk)
-            
-            if query.exists():
-                raise serializers.ValidationError({
-                    'name': f'A master with this name already exists for type {master_type}'
-                })
-        
-        # Check for duplicate codes within departments
-        if code and master_type == MasterType.DEPARTMENT:
-            query = Master.objects.filter(
-                master_type=MasterType.DEPARTMENT,
-                code__iexact=code,
-                status=MasterStatus.ACTIVE
-            )
-            
-            if self.instance:
-                query = query.exclude(pk=self.instance.pk)
-            
-            if query.exists():
-                raise serializers.ValidationError({
-                    'code': 'A department with this code already exists'
-                })
         
         # Validate parent type matches
         if parent and parent.master_type != master_type:
@@ -236,12 +204,15 @@ class MasterCreateUpdateSerializer(serializers.ModelSerializer):
                 'parent': 'Parent must be of the same master type'
             })
         
-        # Prevent circular parent reference
+        # Prevent circular parent reference (any depth)
         if self.instance and parent:
-            if parent == self.instance or parent.parent == self.instance:
-                raise serializers.ValidationError({
-                    'parent': 'Circular parent reference detected'
-                })
+            current = parent
+            while current:
+                if current == self.instance:
+                    raise serializers.ValidationError({
+                        'parent': 'Circular parent reference detected'
+                    })
+                current = current.parent
         
         return attrs
 
@@ -307,81 +278,3 @@ class MasterDropdownSerializer(serializers.ModelSerializer):
             return obj.project_details.department.name
         except ProjectDetails.DoesNotExist:
             return None
-
-# =====================================================
-# EMPLOYEE ROLE ASSIGNMENT SERIALIZERS (RBAC)
-# =====================================================
-
-class EmployeeRoleAssignmentSerializer(serializers.ModelSerializer):
-    """
-    Admin serializer for assigning roles to employees.
-    """
-
-    employee_name = serializers.SerializerMethodField(read_only=True)
-    role_name = serializers.SerializerMethodField(read_only=True)
-    department_name = serializers.SerializerMethodField(read_only=True)
-    reporting_manager_name = serializers.SerializerMethodField(read_only=True)
-
-    class Meta:
-        model = EmployeeRoleAssignment
-        fields = [
-            "id",
-            "employee",
-            "employee_name",
-            "role",
-            "role_name",
-            "department",
-            "department_name",
-            "reporting_manager",
-            "reporting_manager_name",
-            "status",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at"]
-
-    # ----------------------------
-    # Display helpers
-    # ----------------------------
-
-    def get_employee_name(self, obj):
-        return obj.employee.get_full_name() or obj.employee.username
-
-    def get_role_name(self, obj):
-        return obj.role.name if obj.role else None
-
-    def get_department_name(self, obj):
-        return obj.department.name if obj.department else None
-
-    def get_reporting_manager_name(self, obj):
-        if obj.reporting_manager:
-            return (
-                obj.reporting_manager.get_full_name()
-                or obj.reporting_manager.username
-            )
-        return None
-
-    # ----------------------------
-    # Business validations
-    # ----------------------------
-
-    def validate(self, attrs):
-        role = attrs.get("role")
-        department = attrs.get("department")
-        reporting_manager = attrs.get("reporting_manager")
-        employee = attrs.get("employee")
-
-        # Manager role requires department
-        if role and role.master_type == MasterType.ROLE:
-            if role.name.lower() == "manager" and not department:
-                raise serializers.ValidationError(
-                    {"department": "Department is required for Manager role"}
-                )
-
-        # Employee cannot report to self
-        if reporting_manager and employee and reporting_manager == employee:
-            raise serializers.ValidationError(
-                {"reporting_manager": "Employee cannot report to themselves"}
-            )
-
-        return attrs
