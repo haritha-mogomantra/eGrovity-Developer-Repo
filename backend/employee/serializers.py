@@ -8,8 +8,11 @@ from django.db.models import Q
 from django.utils import timezone
 from .models import Employee
 from masters.models import Master, MasterType
+from masters.models import MasterStatus
 import re, csv, io, os
 from datetime import datetime, date
+from django.db import IntegrityError
+
 
 User = get_user_model()
 
@@ -41,10 +44,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     manager_emp_id = serializers.CharField(source="manager.user.emp_id", read_only=True)
     team_size = serializers.SerializerMethodField(read_only=True)
     status = serializers.SerializerMethodField()
-    designation = serializers.CharField(
-        source="designation.name",
-        read_only=True
-    )
+    designation = serializers.CharField(read_only=True)
 
     class Meta:
         model = Employee
@@ -244,9 +244,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         department = Master.objects.filter(
             name__iexact=dept_name,
             master_type=MasterType.DEPARTMENT,
-            status="Active"
+            status=MasterStatus.ACTIVE
         ).first()
-
         if not department:
             raise serializers.ValidationError({
                 "department_name": f"Department '{dept_name}' not found or inactive."
@@ -254,34 +253,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
 
         attrs["department"] = department
 
-        designation_name = attrs.get("designation")
+        designation_value = attrs.get("designation")
 
-        if designation_name:
-            designation_name = attrs.get("designation")
-
-            if designation_name:
-                designation_name = designation_name.strip()
-
-                request = self.context.get("request")
-                actor = request.user if request else None
-
-                designation, created = Master.objects.get_or_create(
-                    master_type=MasterType.DESIGNATION,
-                    name__iexact=designation_name,
-                    defaults={
-                        "name": designation_name,
-                        "status": "Active",
-                        "created_by": actor,
-                        "updated_by": actor,
-                    }
-                )
-
-                # If exists but inactive → activate
-                if designation.status != "Active":
-                    designation.status = "Active"
-                    designation.save(update_fields=["status"])
-
-                attrs["designation"] = designation
+        if designation_value:
+            attrs["designation"] = designation_value.strip().title()
 
         return attrs
 
@@ -318,20 +293,38 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if not admin_emp_id:
             raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
 
-        user = User.objects.create_user(
-            emp_id=admin_emp_id,
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            department=department
-        )
+        try:
+            user = User.objects.create_user(
+                username=admin_emp_id,
+                emp_id=admin_emp_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                department=department
+            )
+        except IntegrityError as e:
+            error_msg = str(e)
+
+            if "users_user.email" in error_msg:
+                raise serializers.ValidationError({
+                    "email": "A user with this email already exists."
+                })
+
+            if "users_user.emp_id" in error_msg:
+                raise serializers.ValidationError({
+                    "emp_id": "Employee ID already exists."
+                })
+
+            raise serializers.ValidationError({
+                "error": "User creation failed due to database constraint."
+            })
 
         validated_data.pop("emp_id", None)
 
         employee_role = Master.objects.filter(
             master_type=MasterType.ROLE,
             name__iexact="Employee",
-            status="Active"
+            status=MasterStatus.ACTIVE
         ).first()
 
         if not employee_role:
@@ -347,7 +340,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             manager=manager,
             **validated_data,
         )
-        employee._validated_from_serializer = True
+
         employee.save()
         return employee
 
@@ -645,29 +638,11 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                     dept_code = row.get(dept_key, "").strip()
                     joining_date_str = row.get("Joining Date", "").strip()
                     contact_number = row.get("Contact Number") or None
-                    designation_name = row.get("Designation") or None
-                    designation = None
+                    designation = row.get("Designation") or None
 
-                    if designation_name:
-                        designation_name = designation_name.strip()
+                    if designation:
+                        designation = designation.strip().title()
 
-                        request = self.context.get("request")
-                        actor = request.user if request else None
-
-                        designation, created = Master.objects.get_or_create(
-                            master_type=MasterType.DESIGNATION,
-                            name__iexact=designation_name,
-                            defaults={
-                                "name": designation_name,
-                                "status": "Active",
-                                "created_by": actor,
-                                "updated_by": actor,
-                            }
-                        )
-
-                        if designation.status != "Active":
-                            designation.status = "Active"
-                            designation.save(update_fields=["status"])
                     manager_emp_id = row.get("Manager") or None
 
                     # 1️⃣ Mandatory Field Validation
@@ -689,7 +664,7 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                     department = Master.objects.filter(
                         name__iexact=dept_name,
                         master_type=MasterType.DEPARTMENT,
-                        status="Active"
+                        status=MasterStatus.ACTIVE
                     ).first()
 
                     if not department:
@@ -804,6 +779,7 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         continue
 
                     user = User.objects.create_user(
+                        username=admin_emp_id,
                         emp_id=admin_emp_id,
                         email=email,
                         first_name=first_name,
@@ -814,7 +790,7 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                     employee_role = Master.objects.filter(
                         master_type=MasterType.ROLE,
                         name__iexact="Employee",
-                        status="Active"
+                        status=MasterStatus.ACTIVE
                     ).first()
 
                     if not employee_role:
@@ -833,10 +809,7 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         contact_number=contact_number,
                         joining_date=joining_date,
                         status="Active",
-                        created_by=actor,
-                        updated_by=actor,
                     )
-                    employee._validated_from_serializer = True
                     employee.save()
 
                     success_count += 1

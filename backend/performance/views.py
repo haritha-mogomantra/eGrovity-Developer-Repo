@@ -109,10 +109,7 @@ class PerformanceEvaluationViewSet(viewsets.ModelViewSet):
 
         # If week provided but year NOT provided → return empty (DO NOT auto-guess)
         if week and not year:
-            return qs.filter(week_number=week).select_related(
-                "employee__user", "department"
-            )
-
+            return qs.none()
 
         # If only year provided -> return entire year (all weeks)
         if year and not week:
@@ -411,7 +408,6 @@ class PerformanceSummaryView(APIView):
                 "emp_id": "employee__user__emp_id",
                 "full_name": "employee__user__first_name",
                 "total_score": "total_score",
-                "rank": "full_rank",
                 "department": "department__name",
             }
 
@@ -517,7 +513,6 @@ class PerformanceSummaryView(APIView):
                 "emp_id": "employee__user__emp_id",
                 "full_name": "employee__user__first_name",
                 "total_score": "total_score",
-                "rank": "full_rank",
                 "department": "department__name",
             }
 
@@ -538,6 +533,12 @@ class PerformanceSummaryView(APIView):
         paginator = PageNumberPagination()
         paginator.page_size = int(request.query_params.get("page_size", 10))
         result_page = paginator.paginate_queryset(qs, request)
+
+        if not result_page:
+            return paginator.get_paginated_response({
+                "evaluation_period": evaluation_period,
+                "records": []
+            })
 
         serializer = PerformanceEvaluationSerializer(result_page, many=True)
         employee_list = serializer.data
@@ -784,12 +785,11 @@ class PerformanceDashboardView(APIView):
                 {
                     "emp_id": e["employee__user__emp_id"],
                     "name": f"{e['employee__user__first_name']} {e['employee__user__last_name']}".strip(),
-                    "department": e["employee__department__name"],
+                    "department": e["department__name"],
                     "average_score": round(e["avg_score"], 2),
                 }
                 for e in weak_employees
             ]
-
 
             return Response(
                 {

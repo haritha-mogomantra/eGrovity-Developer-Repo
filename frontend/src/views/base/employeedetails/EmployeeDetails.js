@@ -64,7 +64,6 @@ function EmployeeTables() {
   const { masters } = useMasters();
 
   const departments = masters?.DEPARTMENT || [];
-  const projects = masters?.PROJECT || [];
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [projectDropdown, setProjectDropdown] = useState([]);
 
@@ -94,6 +93,7 @@ function EmployeeTables() {
 
   
   const fetchManagers = async () => {
+    if (!token) return;
     try {
       const res = await fetch(MANAGER_LIST_URL, { headers: authHeaders });
       const data = await res.json();
@@ -115,6 +115,7 @@ function EmployeeTables() {
 
   const fetchEmployees = async (page = 1, orderingParam = "", search = "") => {
     
+    if (!token) return; 
     setLoading(true);
 
     try {
@@ -140,6 +141,7 @@ function EmployeeTables() {
   };
 
   const loadSearchResults = async (page, value) => {
+    if (!token) return;
     try {
       setLoading(true);
 
@@ -169,6 +171,7 @@ function EmployeeTables() {
 
 
   const fetchAllEmployees = async () => {
+    if (!token) return [];
     try {
       let allEmployees = [];
       let page = 1;
@@ -550,18 +553,16 @@ function EmployeeTables() {
 
 
       if (!res.ok) {
-        if (data?.errors && typeof data.errors === "object") {
-          const backendErrors = {};
-          Object.entries(data.errors).forEach(([key, val]) => {
-            backendErrors[key] = Array.isArray(val) ? val[0] : val;
-          });
 
-          setErrors(backendErrors);
+        // 🔥 FIX: backend sends { errors: { field: message } }
+        if (data?.errors && typeof data.errors === "object") {
+          setErrors(data.errors);
           setLoading(false);
           return;
         }
 
-        setAlert({ message: data?.error || "Failed to save employee.", type: "danger" });
+        // fallback for unexpected errors
+        setAlert({ message: "Failed to save employee.", type: "danger" });
         setLoading(false);
         return;
       }
@@ -777,7 +778,7 @@ function EmployeeTables() {
     }, [activePage, searchTerm]);
 
   const highlightText = (text, keyword) => {
-    if (!keyword) return text;
+    if (!keyword || text == null) return text;
 
     const regex = new RegExp(`(${keyword})`, "gi");
     return text.toString().split(regex).map((part, index) =>
@@ -799,18 +800,6 @@ function EmployeeTables() {
       csvInputRef.current.click();
     }
   };
-
-  useEffect(() => {
-    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-
-    tooltipTriggerList.forEach((el) => {
-      try {
-        new Tooltip(el);
-      } catch (e) {
-        console.warn("Tooltip init failed:", e);
-      }
-    });
-  }, []);
 
   useEffect(() => {
     const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
@@ -1496,9 +1485,18 @@ function EmployeeTables() {
                         onChange={async (e) => {
                           handleInputChange(e);
 
+                            if (formData.email !== e.target.value) {
+                              setErrors(prev => ({ ...prev, email: "" }));
+                            }
+
                           // realtime email duplicate check
                           if (mode === "add") {
                             const emailVal = e.target.value.trim();
+
+                            //STOP if email format is invalid
+                            if (!validateEmail(emailVal)) {
+                              return;
+                            }
 
                             try {
                               const res = await fetch(`${API_URL}?search=${encodeURIComponent(emailVal)}`, {
@@ -1516,6 +1514,11 @@ function EmployeeTables() {
                                   ...prev,
                                   email: "Email already in use",
                                 }));
+                              } else {
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  email: "",
+                                }));
                               }
 
                             } catch (error) {
@@ -1525,7 +1528,6 @@ function EmployeeTables() {
 
                         }}
                         readOnly={mode === "view"}
-                        placeholder={errors.email || ""}
                       />
                       {errors.email && (
                         <div className="invalid-feedback">{errors.email}</div>
@@ -1669,7 +1671,11 @@ function EmployeeTables() {
                     Close
                   </button>
                   {mode !== "view" && (
-                    <button className="btn btn-primary" onClick={handleSave}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleSave}
+                      disabled={Boolean(errors.email)}
+                    >
                       {mode === "add" ? "Save" : "Update"}
                     </button>
                   )}

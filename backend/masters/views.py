@@ -2,59 +2,80 @@
 # FILE: masters/views.py
 # ==============================================================================
 
-from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError, PermissionDenied
-from django.db.models import Q
-from django.core.cache import cache
-from django_filters.rest_framework import DjangoFilterBackend
+from __future__ import annotations
+
 import csv
-from django.http import HttpResponse
-from .services import DepartmentService
+import logging
+from typing import Any, Dict, List, Optional, Type
+
+from django.core.cache import cache
+from django.db import models  # For models.Q
 from django.db import transaction
+from django.db.models import QuerySet
+from django.http import HttpResponse
+from django.utils import timezone  # For timezone.now()
+from django.utils.translation import gettext_lazy as _
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.serializers import Serializer
 
 from .models import (
+    AuditAction,
+    DepartmentDetails,
     Master,
     MasterAuditLog,
-    MasterType,
     MasterStatus,
-    ProjectDetails
-)
-from .serializers import (
-    MasterListSerializer, MasterDetailSerializer, 
-    MasterCreateUpdateSerializer, MasterStatusUpdateSerializer,
-    MasterBulkCreateSerializer, MasterAuditLogSerializer,
-    MasterDropdownSerializer
+    MasterType,
+    ProjectDetails,
 )
 from .permissions import IsMasterAdmin, IsMasterAdminOrReadOnly
+from .serializers import (
+    MasterListSerializer,
+    MasterDetailSerializer,
+    MasterCreateUpdateSerializer,
+    MasterStatusUpdateSerializer,
+    MasterBulkCreateSerializer,
+    MasterAuditLogSerializer,
+    MasterOptionSerializer,
+    MasterTreeSerializer
+)
+from .services import DepartmentService
 from .utils import log_master_change
-from rest_framework.views import APIView
 
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.response import Response
-from rest_framework.exceptions import NotFound
+logger = logging.getLogger(__name__)
 
+
+# ==============================================================================
+# PAGINATION
+# ==============================================================================
 
 class SafePageNumberPagination(PageNumberPagination):
     """
-    Pagination that does NOT throw 404 for invalid pages.
-    Returns empty result instead.
+    Pagination that returns empty results for invalid pages instead of 404.
     """
     page_size = 10
     page_size_query_param = "page_size"
     max_page_size = 100
 
-    def paginate_queryset(self, queryset, request, view=None):
+    def paginate_queryset(
+        self, 
+        queryset: QuerySet, 
+        request: Request, 
+        view: Optional[Any] = None
+    ) -> List[Any]:
         try:
             return super().paginate_queryset(queryset, request, view)
         except NotFound:
-            # Invalid page → return empty list instead of error
             self.page = None
             return []
 
-    def get_paginated_response(self, data):
+    def get_paginated_response(self, data: List[Dict]) -> Response:
         if self.page is None:
             return Response({
                 "count": 0,
@@ -75,449 +96,414 @@ class SafePageNumberPagination(PageNumberPagination):
         })
 
 
+# ==============================================================================
+# VIEWSET
+# ==============================================================================
+
 class MasterViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for Master CRUD operations
+    ViewSet for Master data management.
     
-    List: GET /api/masters/
-    Create: POST /api/masters/
-    Retrieve: GET /api/masters/{id}/
-    Update: PUT /api/masters/{id}/
-    Partial Update: PATCH /api/masters/{id}/
-    Delete: DELETE /api/masters/{id}/
+    Provides CRUD operations, status management, bulk operations,
+    and specialized endpoints for department lifecycle management.
     """
-
+    
     pagination_class = SafePageNumberPagination
-    queryset = Master.objects.select_related(
-        'created_by', 'updated_by', 'parent'
-    ).prefetch_related('children')
     permission_classes = [IsAuthenticated, IsMasterAdminOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['master_type', 'status', 'is_system']
     search_fields = ['name', 'description', 'code']
     ordering_fields = ['name', 'created_at', 'updated_at', 'display_order']
     ordering = ['master_type', 'display_order', 'name']
+    lookup_field = 'pk'
+
+    def get_queryset(self) -> QuerySet:
+        """Return optimized queryset with filtering."""
+        queryset = Master.objects.select_related(
+            'created_by', 'updated_by', 'parent'
+        ).prefetch_related('children', 'department_details', 'project_details')
+        
+        return self._apply_filters(queryset)
     
-    def get_serializer_class(self):
+    def _apply_filters(self, queryset: QuerySet) -> QuerySet:
+        """Apply query parameter filters."""
+        params = self.request.query_params
+        
+        # Master type filter
+        master_type = params.get('master_type')
+        if master_type:
+            queryset = queryset.filter(master_type__iexact=master_type)
+            
+            # Auto-exclude inactive projects unless explicitly requested
+            if master_type.upper() == MasterType.PROJECT:
+                status_filter = params.get('status')
+                if not status_filter:
+                    queryset = queryset.exclude(status=MasterStatus.INACTIVE)
+        
+        # Status filter
+        status_param = params.get('status')
+        if status_param:
+            queryset = queryset.filter(status__iexact=status_param)
+        
+        # Search filter
+        search = params.get('search')
+        if search:
+            queryset = queryset.filter(
+                models.Q(name__icontains=search) | 
+                models.Q(description__icontains=search) |
+                models.Q(code__icontains=search)
+            )
+        
+        return queryset
+
+    def get_serializer_class(self) -> Type[Serializer]:
+        """Return appropriate serializer for action."""
         if self.action == 'list':
             return MasterListSerializer
         elif self.action in ['create', 'update', 'partial_update']:
             return MasterCreateUpdateSerializer
+        elif self.action == 'change_status':
+            return MasterStatusUpdateSerializer
         return MasterDetailSerializer
-    
-    def get_queryset(self):
-        """Filter queryset based on query parameters"""
-        queryset = super().get_queryset()
+
+    def get_serializer_context(self) -> Dict[str, Any]:
+        """Add request to serializer context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    # ==========================================================================
+    # CRUD OPERATIONS
+    # ==========================================================================
+
+    @transaction.atomic
+    def perform_create(self, serializer: MasterCreateUpdateSerializer) -> Master:
+        """Create master with audit logging."""
+        master = serializer.save()
         
-        # Filter by master type from query params
-        master_type = self.request.query_params.get('master_type', None)
-        if master_type:
-            queryset = queryset.filter(master_type__iexact=master_type)
-
-        if master_type == MasterType.PROJECT and not self.request.query_params.get('status'):
-            queryset = queryset.exclude(status=MasterStatus.INACTIVE)
-
-
-        status = self.request.query_params.get('status', None)
-        if status:
-            queryset = queryset.filter(status__iexact=status)
-
-        # Search functionality
-        search = self.request.query_params.get('search', None)
-        if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) | 
-                Q(description__icontains=search) |
-                Q(code__icontains=search)
-            )
-        
-        return queryset
-    
-    def perform_create(self, serializer):
-        """Create master with audit tracking"""
-        master = serializer.save(
-            created_by=self.request.user,
-            updated_by=self.request.user
-        )
-
-        # =====================================================
-        # PROJECT DETAILS CREATION (ONLY FOR PROJECT)
-        # =====================================================
-        if master.master_type == MasterType.PROJECT:
-            department_id = self.request.data.get("department_id")
-            manager_ids = self.request.data.get("managers", [])
-
-            if not department_id:
-                raise ValidationError({"department_id": "Department is required for project"})
-
-            department = Master.objects.filter(
-                id=department_id,
-                master_type=MasterType.DEPARTMENT,
-                status=MasterStatus.ACTIVE
-            ).first()
-
-            if not department:
-                raise ValidationError({"department_id": "Invalid department"})
-
-            project_details = ProjectDetails.objects.create(
-                project=master,
-                department=department
-            )
-
-            if manager_ids:
-                project_details.managers.set(manager_ids)
-
-        # Log creation
-        log_master_change(
-            master=master,
-            action='CREATE',
-            user=self.request.user,
-            request=self.request,
-            new_data=serializer.data
-        )
-
-        # Invalidate cache
+        self._log_change(master, AuditAction.CREATE, new_data=serializer.data)
         self._invalidate_cache(master.master_type)
+        
+        return master
 
-    
-    def perform_update(self, serializer):
-        """Update master with audit tracking"""
+    @transaction.atomic
+    def perform_update(self, serializer: MasterCreateUpdateSerializer) -> Master:
+        """Update master with audit logging."""
         old_data = MasterDetailSerializer(serializer.instance).data
-        master = serializer.save(updated_by=self.request.user)
-
-        # =====================================================
-        # PROJECT DETAILS UPDATE (ONLY FOR PROJECT)
-        # =====================================================
-        if master.master_type == MasterType.PROJECT:
-            department_id = self.request.data.get("department_id")
-            manager_ids = self.request.data.get("managers")
-
-            project_details, _ = ProjectDetails.objects.get_or_create(
-                project=master
-            )
-
-            if department_id:
-                department = Master.objects.filter(
-                    id=department_id,
-                    master_type=MasterType.DEPARTMENT,
-                    status=MasterStatus.ACTIVE
-                ).first()
-
-                if not department:
-                    raise ValidationError({"department_id": "Invalid department"})
-
-                project_details.department = department
-
-            if manager_ids is not None:
-                project_details.managers.set(manager_ids)
-
-            project_details.save()
-
+        master = serializer.save()
         
-        # Log update
-        log_master_change(
-            master=master,
-            action='UPDATE',
-            user=self.request.user,
-            request=self.request,
-            old_data=old_data,
+        self._log_change(
+            master, 
+            AuditAction.UPDATE, 
+            old_data=old_data, 
             new_data=serializer.data
         )
-        
-        # Invalidate cache
         self._invalidate_cache(master.master_type)
-    
-    def perform_destroy(self, instance):
+        
+        return master
+
+    @transaction.atomic
+    def perform_destroy(self, instance: Master) -> None:
         """
-        Soft delete master by setting status = Inactive
+        Soft delete master by setting status to INACTIVE.
+        Hard delete is prevented for data integrity.
         """
-
-        # ❌ Departments must not be deleted directly
-        if instance.master_type == MasterType.DEPARTMENT:
-            raise ValidationError(
-                "Departments must be deactivated using the /deactivate endpoint"
-            )
-
-
-        # System masters cannot be deleted
-        if instance.is_system:
-            raise PermissionDenied("System masters cannot be deleted")
-
-        # Cannot delete if active children exist
-        if instance.children.filter(status=MasterStatus.ACTIVE).exists():
-            raise ValidationError({
-                "detail": "Cannot delete this item because it has active child entries"
-            })
-
+        self._validate_deletion(instance)
+        
         old_data = MasterDetailSerializer(instance).data
-
-        # Soft delete (skip full_clean / unique validation)
+        
+        # Soft delete with minimal field update to bypass validation
         instance.status = MasterStatus.INACTIVE
         instance.updated_by = self.request.user
-        instance.save(update_fields=["status", "updated_by"])
-
-        # Audit log
-        log_master_change(
-            master=instance,
-            action='DELETE',
-            user=self.request.user,
-            request=self.request,
-            old_data=old_data
-        )
-
-        # Invalidate cache
+        instance.save(update_fields=["status", "updated_by", "updated_at"])
+        
+        self._log_change(instance, AuditAction.DELETE, old_data=old_data)
         self._invalidate_cache(instance.master_type)
 
-    
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsMasterAdmin])
-    def change_status(self, request, pk=None):
+    def _validate_deletion(self, instance: Master) -> None:
+        """Validate if master can be deleted/deactivated."""
+        # Prevent department deletion via standard endpoint
+        if instance.master_type == MasterType.DEPARTMENT:
+            raise ValidationError(
+                _("Departments must be deactivated using the /deactivate endpoint.")
+            )
+        
+        # Protect system masters
+        if instance.is_system:
+            raise PermissionDenied(_("System masters cannot be deleted."))
+        
+        # Prevent deletion with active children
+        if instance.children.filter(status=MasterStatus.ACTIVE).exists():
+            raise ValidationError(
+                _("Cannot delete master with active child entries.")
+            )
+
+    # ==========================================================================
+    # CUSTOM ACTIONS
+    # ==========================================================================
+
+    @action(
+        detail=True, 
+        methods=['patch'], 
+        permission_classes=[IsAuthenticated, IsMasterAdmin],
+        url_path='change-status'
+    )
+    def change_status(self, request: Request, pk: Optional[int] = None) -> Response:
         """
-        Change master status
-        PATCH /api/masters/{id}/change_status/
-        Body: {"status": "Active" or "Inactive"}
+        Change master status with business rule validation.
+        
+        PATCH /api/masters/{id}/change-status/
+        Body: {"status": "ACTIVE" | "INACTIVE"}
         """
         master = self.get_object()
-
-        # ❌ Department status must use /deactivate endpoint
+        new_status = request.data.get('status')
+        
+        # Departments use specialized endpoint
         if master.master_type == MasterType.DEPARTMENT:
             raise ValidationError(
-                "Use /deactivate endpoint to change department status"
-            )
-
-        
-        if master.is_system and request.data.get('status') == MasterStatus.INACTIVE:
-            return Response(
-                {'error': 'System masters cannot be deactivated'},
-                status=status.HTTP_400_BAD_REQUEST
+                _("Use /deactivate endpoint for department status changes.")
             )
         
-        serializer = MasterStatusUpdateSerializer(
-            data=request.data,
-            context={'master': master}
+        # Protect system masters
+        if master.is_system and new_status == MasterStatus.INACTIVE:
+            raise PermissionDenied(_("System masters cannot be deactivated."))
+        
+        serializer = self.get_serializer(
+            master, 
+            data=request.data, 
+            partial=True
         )
         serializer.is_valid(raise_exception=True)
         
         old_status = master.status
-        master.status = serializer.validated_data['status']
-        master.updated_by = request.user
-        master.save()
+        updated_master = serializer.save(updated_by=request.user)
         
-        # Log status change
-        log_master_change(
-            master=master,
-            action='STATUS_CHANGE',
-            user=request.user,
-            request=request,
+        self._log_change(
+            updated_master,
+            AuditAction.STATUS_CHANGE,
             old_data={'status': old_status},
-            new_data={'status': master.status}
+            new_data={'status': updated_master.status}
         )
+        self._invalidate_cache(updated_master.master_type)
         
-        # Invalidate cache
-        self._invalidate_cache(master.master_type)
-        
-        return Response(MasterDetailSerializer(master).data)
-    
+        return Response(MasterDetailSerializer(updated_master).data)
 
-    @transaction.atomic
     @action(
         detail=True,
         methods=["post"],
         permission_classes=[IsAuthenticated, IsMasterAdmin],
         url_path="deactivate"
     )
-    def deactivate_department(self, request, pk=None):
+    @transaction.atomic
+    def deactivate_department(self, request: Request, pk: Optional[int] = None) -> Response:
         """
-        Deactivate a department safely.
+        Deactivate a department with data migration.
+        
         POST /api/masters/{id}/deactivate/
-        Body: { "reason": "Business restructuring" }
+        Body: {
+            "reason": "Business restructuring",
+            "target_department_id": 123
+        }
         """
-
         master = self.get_object()
-
-        # Only departments allowed
+        
         if master.master_type != MasterType.DEPARTMENT:
-            raise ValidationError("Only departments can be deactivated")
-
-        reason = request.data.get("reason")
-        if not reason or not reason.strip():
-            raise ValidationError({"reason": "Deactivation reason is required"})
+            raise ValidationError(_("Only departments can be deactivated."))
         
-        target_department_id = request.data.get("target_department_id")
-        if not target_department_id:
+        # Validate request data
+        reason = request.data.get("reason", "").strip()
+        if not reason:
+            raise ValidationError({"reason": _("Deactivation reason is required.")})
+        
+        target_id = request.data.get("target_department_id")
+        if not target_id:
             raise ValidationError({
-                "target_department_id": "Target department is required"
-            })
-
-        target_department = Master.objects.filter(
-            id=target_department_id,
-            master_type=MasterType.DEPARTMENT,
-            status=MasterStatus.ACTIVE
-        ).first()
-
-        if not target_department:
-            raise ValidationError({
-                "target_department_id": "Invalid or inactive target department"
+                "target_department_id": _("Target department is required.")
             })
         
-        if target_department.id == master.id:
+        if int(target_id) == master.id:
             raise ValidationError({
-                "target_department_id": "Target department must be different from the deactivated department"
+                "target_department_id": _("Cannot migrate to the same department.")
             })
-
-
+        
+        # Validate target department
+        try:
+            target = Master.objects.get(
+                id=target_id,
+                master_type=MasterType.DEPARTMENT,
+                status=MasterStatus.ACTIVE
+            )
+        except Master.DoesNotExist:
+            raise ValidationError({
+                "target_department_id": _("Invalid or inactive target department.")
+            })
+        
+        # Execute deactivation via service
         service = DepartmentService()
         summary = service.deactivate_department(
             department=master,
-            target_department=target_department,
+            target_department=target,
             action_by=request.user,
             reason=reason
         )
-
-        # 🔒 Finally deactivate department itself
+        
+        # Update department status and details
         master.status = MasterStatus.INACTIVE
         master.updated_by = request.user
         master.save(update_fields=["status", "updated_by"])
-
-
-        return Response(
-            {
-                "success": True,
-                "summary": summary
-            },
-            status=status.HTTP_200_OK
+        
+        # Update extension details
+        DepartmentDetails.objects.filter(master=master).update(
+            deactivated_at=timezone.now(),
+            deactivated_by=request.user,
+            deactivation_reason=reason
         )
+        
+        return Response({
+            "success": True,
+            "summary": summary
+        })
 
-    
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsMasterAdmin])
-    def bulk_create(self, request):
+    @action(
+        detail=False, 
+        methods=['post'], 
+        permission_classes=[IsAuthenticated, IsMasterAdmin],
+        url_path='bulk-create'
+    )
+    @transaction.atomic
+    def bulk_create(self, request: Request) -> Response:
         """
-        Bulk create masters
-        POST /api/masters/bulk_create/
+        Bulk create masters (excludes PROJECT type).
+        
+        POST /api/masters/bulk-create/
         Body: {"masters": [{...}, {...}]}
         """
         serializer = MasterBulkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        created_masters = []
-        errors = []
+        created_masters: List[Master] = []
+        errors: List[Dict] = []
         
         for idx, master_data in enumerate(serializer.validated_data['masters']):
+            # Projects excluded from bulk creation
             if master_data.get("master_type") == MasterType.PROJECT:
-                raise ValidationError(
-                    "Projects cannot be bulk created. Use the normal create API."
-                )
-
-            try:
-                master_serializer = MasterCreateUpdateSerializer(data=master_data)
-                master_serializer.is_valid(raise_exception=True)
-                master = master_serializer.save(
-                    created_by=request.user,
-                    updated_by=request.user
-                )
-                created_masters.append(master)
-                
-                # Log creation
-                log_master_change(
-                    master=master,
-                    action='CREATE',
-                    user=request.user,
-                    request=request,
-                    new_data=master_serializer.data
-                )
-            except Exception as e:
                 errors.append({
                     'index': idx,
-                    'data': master_data,
-                    'error': str(e)
+                    'error': _("Projects cannot be bulk created.")
+                })
+                continue
+            
+            try:
+                master_serializer = MasterCreateUpdateSerializer(
+                    data=master_data,
+                    context=self.get_serializer_context()
+                )
+                master_serializer.is_valid(raise_exception=True)
+                master = master_serializer.save()
+                created_masters.append(master)
+                
+                self._log_change(master, AuditAction.CREATE, new_data=master_serializer.data)
+                
+            except ValidationError as e:
+                errors.append({
+                    'index': idx,
+                    'error': e.detail
+                })
+            except Exception as e:
+                logger.error(f"Bulk create error at index {idx}: {str(e)}")
+                errors.append({
+                    'index': idx,
+                    'error': _("Internal error occurred.")
                 })
         
-        # Invalidate all caches
-        for master_type in MasterType:
-            self._invalidate_cache(master_type.value)
+        # Invalidate all type caches
+        for mt in MasterType:
+            self._invalidate_cache(mt.value)
         
+        status_code = status.HTTP_201_CREATED if created_masters else status.HTTP_400_BAD_REQUEST
         return Response({
             'created': len(created_masters),
             'failed': len(errors),
             'masters': MasterListSerializer(created_masters, many=True).data,
             'errors': errors
-        }, status=status.HTTP_201_CREATED if created_masters else status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=False, methods=['get'])
-    def dropdown(self, request):
+        }, status=status_code)
+
+    @action(detail=False, methods=['get'], url_path='dropdown')
+    def dropdown(self, request: Request) -> Response:
         """
-        Get masters for dropdown (lightweight response)
-        GET /api/masters/dropdown/?type=ROLE&status=Active
+        Get lightweight master options for dropdowns.
+        
+        GET /api/masters/dropdown/?type=ROLE&status=ACTIVE
         """
         master_type = request.query_params.get('type')
         if not master_type:
-            return Response(
-                {'error': 'type parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError({"type": _("Type parameter is required.")})
         
-        # Try to get from cache
-        cache_key = f'masters_dropdown_{master_type}_{request.query_params.get("status", "Active")}'
-        cached_data = cache.get(cache_key)
+        # Normalize and validate type
+        type_upper = master_type.upper()
+        try:
+            master_type_enum = MasterType(type_upper)
+        except ValueError:
+            raise ValidationError({"type": _("Invalid master type.")})
         
-        if cached_data:
-            return Response(cached_data)
+        # Check cache
+        status_param = request.query_params.get('status', MasterStatus.ACTIVE.value)
+        cache_key = f'masters_dropdown_{type_upper}_{status_param.capitalize()}'
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
         
-        queryset = self.get_queryset().filter(
-            master_type__iexact=master_type
+        # Build queryset
+        queryset = Master.objects.filter(
+            master_type=master_type_enum,
+            status__iexact=status_param
         ).order_by('display_order', 'name')
-
-        # =====================================================
-        # 🔥 PROJECT DROPDOWN NEEDS DEPARTMENT INFO
-        # =====================================================
-        if master_type.upper() == MasterType.PROJECT:
-            queryset = queryset.filter(
-                master_type__iexact=MasterType.PROJECT,
-                status=MasterStatus.ACTIVE
-            )
-
-            project_details_map = {
-                pd.project_id: pd
-                for pd in ProjectDetails.objects.select_related("department")
-            }
-
-            data = []
-            for p in queryset:
-                pd = project_details_map.get(p.id)
-
-                data.append({
-                    "id": p.id,
-                    "name": p.name,
-                    "department_name": pd.department.name if pd else None,
-                })
-
-            cache.set(cache_key, data, 3600)
-            return Response(data)
-
-        # =====================================================
-        # ✅ DEFAULT DROPDOWN (ROLE / DEPARTMENT / METRIC)
-        # =====================================================
-        serializer = MasterDropdownSerializer(queryset, many=True)
-        cache.set(cache_key, serializer.data, 3600)
-        return Response(serializer.data)
+        
+        # Use appropriate serializer
+        if master_type_enum == MasterType.PROJECT:
+            data = self._build_project_dropdown(queryset)
+        else:
+            serializer = MasterOptionSerializer(queryset, many=True)
+            data = serializer.data
+        
+        cache.set(cache_key, data, 3600)
+        return Response(data)
     
-    @action(detail=False, methods=['get'])
-    def types(self, request):
-        """
-        Get all available master types
-        GET /api/masters/types/
-        """
+    def _build_project_dropdown(self, queryset: QuerySet) -> List[Dict]:
+        """Build project dropdown with department info."""
+        projects = list(queryset.select_related('project_details__department'))
+        
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "code": p.code,
+                "department_name": (
+                    p.project_details.department.name 
+                    if hasattr(p, 'project_details') and p.project_details.department 
+                    else None
+                ),
+                "status": p.status
+            }
+            for p in projects
+        ]
+
+    @action(detail=False, methods=['get'], url_path='types')
+    def types(self, request: Request) -> Response:
+        """Get available master types."""
         return Response([
-            {'value': choice.value, 'label': choice.label}
+            {'value': choice.value, 'label': str(choice.label)}
             for choice in MasterType
         ])
-    
-    @action(detail=False, methods=['get'])
-    def export(self, request):
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export(self, request: Request) -> HttpResponse:
         """
-        Export masters to CSV
-        GET /api/masters/export/?type=ROLE
+        Export masters to CSV (streaming response).
+        
+        GET /api/masters/export/?master_type=ROLE
         """
-        queryset = self.get_queryset()
+        queryset = self.get_queryset().iterator(chunk_size=1000)
         
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="masters_export.csv"'
@@ -538,28 +524,89 @@ class MasterViewSet(viewsets.ModelViewSet):
                 master.status,
                 master.display_order,
                 master.is_system,
-                master.created_at,
-                master.created_by.username if master.created_by else ''
+                master.created_at.isoformat(),
+                master.created_by.get_full_name() if master.created_by else ''
             ])
         
         return response
-    
-    @action(detail=True, methods=['get'])
-    def audit_logs(self, request, pk=None):
+
+    @action(
+        detail=True, 
+        methods=['get'], 
+        url_path='audit-logs',
+        pagination_class=SafePageNumberPagination
+    )
+    def audit_logs(self, request: Request, pk: Optional[int] = None) -> Response:
         """
-        Get audit logs for a specific master
-        GET /api/masters/{id}/audit_logs/
+        Get paginated audit logs for a master.
+        
+        GET /api/masters/{id}/audit-logs/
         """
         master = self.get_object()
-        logs = master.audit_logs.all()
+        logs = master.audit_logs.select_related('changed_by').all()
+        
+        page = self.paginate_queryset(logs)
+        if page is not None:
+            serializer = MasterAuditLogSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
         serializer = MasterAuditLogSerializer(logs, many=True)
         return Response(serializer.data)
-    
-    def _invalidate_cache(self, master_type):
-        """Invalidate cache for a specific master type"""
-        for status_value in [MasterStatus.ACTIVE, MasterStatus.INACTIVE]:
-            cache_key = f'masters_dropdown_{master_type}_{status_value.value}'
-            cache.delete(cache_key)
 
-        # 🔥 Project dropdown depends on multiple masters
-        cache.delete("masters_dropdown_PROJECT_Active")
+    @action(detail=False, methods=['get'], url_path='tree')
+    def tree(self, request: Request) -> Response:
+        """
+        Get hierarchical tree structure.
+        
+        GET /api/masters/tree/?type=DEPARTMENT&root_only=true
+        """
+        master_type = request.query_params.get('type')
+        if not master_type:
+            raise ValidationError({"type": _("Type parameter is required.")})
+        
+        queryset = Master.objects.filter(
+            master_type__iexact=master_type,
+            status=MasterStatus.ACTIVE
+        )
+        
+        # Optional: return only root nodes
+        if request.query_params.get('root_only') == 'true':
+            queryset = queryset.filter(parent__isnull=True)
+        
+        serializer = MasterTreeSerializer(
+            queryset, 
+            many=True, 
+            context={'request': request, 'depth': 0}
+        )
+        return Response(serializer.data)
+
+    # ==========================================================================
+    # HELPERS
+    # ==========================================================================
+
+    def _log_change(
+        self, 
+        master: Master, 
+        action: AuditAction,
+        old_data: Optional[Dict] = None,
+        new_data: Optional[Dict] = None
+    ) -> None:
+        """Create audit log entry."""
+        log_master_change(
+            master=master,
+            action=action.value,
+            user=self.request.user,
+            request=self.request,
+            old_data=old_data,
+            new_data=new_data
+        )
+
+    def _invalidate_cache(self, master_type: str) -> None:
+        """Invalidate dropdown caches for a master type."""
+        for status in MasterStatus:
+            cache_key = f'masters_dropdown_{master_type}_{status.value}'
+            cache.delete(cache_key)
+        
+        # Special case: projects depend on departments
+        if master_type == MasterType.DEPARTMENT.value:
+            cache.delete(f"masters_dropdown_{MasterType.PROJECT.value}_{MasterStatus.ACTIVE.value}")

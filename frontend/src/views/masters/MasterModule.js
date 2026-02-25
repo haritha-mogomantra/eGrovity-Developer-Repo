@@ -36,7 +36,7 @@ const MasterAPI = {
 
     if (status !== "All") params.status = status;
 
-    const res = await axiosInstance.get("/masters/", { params });
+    const res = await axiosInstance.get("masters/", { params });
 
 
     return {
@@ -49,19 +49,44 @@ const MasterAPI = {
     };
     },
 
-  create: async (masterType, payload) => {
-    const res = await axiosInstance.post("/masters/", {
-      master_type: masterType,
-      ...payload,
-    });
-    return res.data;
-  },
+    create: async (masterType, payload) => {
+      const cleanPayload = { ...payload };
 
-  update: async (id, payload) => {
-    const res = await axiosInstance.patch(`/masters/${id}/`, payload);
-    return res.data;
-  },
-};
+      // Send empty code to satisfy backend (we don't use it)
+      cleanPayload.code = "";
+
+      // Remove empty values (except code which backend requires)
+      if (!cleanPayload.status) delete cleanPayload.status;
+      if (!cleanPayload.description) delete cleanPayload.description;
+      if (!cleanPayload.parent) delete cleanPayload.parent;
+
+      console.log("CREATE PAYLOAD:", cleanPayload);
+
+      const res = await axiosInstance.post("masters/", {
+        master_type: masterType,
+        status: "Active",
+        ...cleanPayload,
+      });
+
+      return res.data;
+    },
+
+    update: async (id, payload) => {
+      const cleanPayload = { ...payload };
+
+      // Send empty code to satisfy backend (we don't use it)
+      cleanPayload.code = "";
+
+      if (!cleanPayload.status) delete cleanPayload.status;
+      if (!cleanPayload.description) delete cleanPayload.description;
+      if (!cleanPayload.parent) delete cleanPayload.parent;
+
+      console.log("UPDATE PAYLOAD:", cleanPayload);
+
+      const res = await axiosInstance.patch(`masters/${id}/`, cleanPayload);
+      return res.data;
+    },
+  };
 
 
 // ============================================================================
@@ -75,7 +100,7 @@ const EmployeeRoleAPI = {
     ordering = "-created_at",
   } = {}) => {
     const res = await axiosInstance.get(
-      "/masters/employee-role-assignments/",
+      "masters/employee-role-assignments/",
       {
         params: {
           status,
@@ -96,7 +121,7 @@ const EmployeeRoleAPI = {
 
   create: async (payload) => {
     const res = await axiosInstance.post(
-      "/masters/employee-role-assignments/",
+      "masters/employee-role-assignments/",
       payload
     );
     return res.data;
@@ -104,7 +129,7 @@ const EmployeeRoleAPI = {
 
   update: async (id, payload) => {
     const res = await axiosInstance.patch(
-      `/masters/employee-role-assignments/${id}/`,
+      `masters/employee-role-assignments/${id}/`,
       payload
     );
     return res.data;
@@ -328,21 +353,22 @@ function renderCell(row, key, onEdit, onDelete) {
 }
 
 function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmentChange }) {
-  const [form, setForm] = useState(initialData || {});
+  const [form, setForm] = useState({});
   const [fieldKey, setFieldKey] = useState(0);
 
   useEffect(() => {
-    const newForm = initialData || {};
-    setForm(newForm);
-    
-    if (newForm.department_id && onDepartmentChange) {
-        onDepartmentChange(newForm.department_id);
+    // Only reset form when modal opens/closes (initialData changes from null to object or vice versa)
+    if (initialData === null) {
+      setForm({});
+    } else if (initialData?.id && !form.id) {
+      // Only set form data if we haven't already (prevents overwriting user input)
+      setForm(initialData);
+      if (initialData.department_id && onDepartmentChange) {
+        onDepartmentChange(initialData.department_id);
+      }
     }
-    }, [initialData]);
-
-  useEffect(() => {
-    setFieldKey(prev => prev + 1);
-  }, [fields]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.id, onDepartmentChange]);
 
   return (
     <div
@@ -356,15 +382,15 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
             <button className="btn-close" onClick={onCancel}></button>
           </div>
 
-          <div className="modal-body" key={fieldKey}>
+          <div className="modal-body">
             {fields.map((f) => (
               <div key={f.key} className="mb-3">
-                {/* ✅ LABEL (Always visible in Add/Edit) */}
+                {/* LABEL (Always visible in Add/Edit) */}
                 <label className="form-label fw-semibold">
                   {f.label}
                 </label>
 
-                {/* ✅ SELECT FIELD */}
+                {/* SELECT FIELD */}
                 {f.type === "select" ? (
                   <select
                     className="form-select"
@@ -403,10 +429,10 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
                     ))}
                   </select>
                 ) : (
-                  /* ✅ INPUT FIELD */
+                  /* INPUT FIELD */
                   <input
                     className="form-control"
-                    disabled={Boolean(initialData)}
+                    disabled={false}  // Always enabled for editing
                     placeholder={`Enter ${f.label}`}
                     value={form[f.key] || ""}
                     onChange={(e) =>
@@ -426,9 +452,12 @@ function AddNewModal({ title, fields, onSave, onCancel, initialData, onDepartmen
                 Cancel
             </button>
 
-            <button
+                        <button
               className="btn btn-primary btn-sm master-modal-btn"
-              onClick={() => onSave(form, { fromModal: true })}
+              onClick={() => {
+                // Ensure we pass the latest form state
+                onSave({ ...form }, { fromModal: true });
+              }}
             >
               Save
             </button>
@@ -486,25 +515,14 @@ function ConfirmDeleteModal({ title, message, onConfirm, onCancel, loading, acti
 
 function DeactivateDepartmentModal({
   department,
+  departments,
   onConfirm,
   onCancel,
   loading,
 }) {
-    const [preview, setPreview] = useState(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
-
-    useEffect(() => {
-      if (!department?.id) return;
-
-      setPreviewLoading(true);
-      EmployeeLifecycleAPI
-        .previewDepartmentDeactivation(department.id)
-        .then(setPreview)
-        .catch(() => setPreview(null))
-        .finally(() => setPreviewLoading(false));
-    }, [department]);
 
   const [reason, setReason] = useState("");
+  const [targetDepartmentId, setTargetDepartmentId] = useState("");
 
   return (
     <div
@@ -524,19 +542,25 @@ function DeactivateDepartmentModal({
             <p className="mb-2">
               All employees will be moved to the default department.
             </p>
-          
-          {previewLoading && (
-            <div className="text-muted small mb-2">
-              Fetching impact summary...
-            </div>
-          )}
 
-          {preview && (
-            <div className="alert alert-warning py-2 small mb-2">
-              <strong>{preview.employee_count}</strong> active employee(s) will be affected.
-            </div>
-          )}
+            <label className="form-label fw-semibold">
+              Target Department <span className="text-danger">*</span>
+            </label>
 
+            <select
+              className="form-select mb-3"
+              value={targetDepartmentId}
+              onChange={(e) => setTargetDepartmentId(Number(e.target.value))}
+            >
+              <option value="">Select Department</option>
+              {departments
+                ?.filter(d => d.id !== department?.id && d.status === "Active")
+                .map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+            </select>
 
             <label className="form-label fw-semibold">
               Deactivation Reason <span className="text-danger">*</span>
@@ -561,8 +585,8 @@ function DeactivateDepartmentModal({
 
             <button
               className="btn btn-danger btn-sm"
-              disabled={!reason || loading || previewLoading || !confirmed}
-              onClick={() => onConfirm(reason)}
+              disabled={!reason || !targetDepartmentId || loading}
+              onClick={() => onConfirm(reason, targetDepartmentId)}
             >
               {loading && (
                 <span className="spinner-border spinner-border-sm me-1"></span>
@@ -681,13 +705,14 @@ function GenericCRUDPage({
     }
   };
 
-  const confirmDepartmentDeactivation = async (reason) => {
+  const confirmDepartmentDeactivation = async (reason, targetDepartmentId) => {
     try {
       setDeptDeactivateLoading(true);
 
       await EmployeeLifecycleAPI.deactivateDepartment({
         departmentId: deptDeactivateTarget.id,
         reason,
+        targetDepartmentId,
       });
 
       reloadMasters(true);
@@ -711,44 +736,55 @@ function GenericCRUDPage({
 
   const editItemHandler = (row) => {
     fetchManagers?.(); 
-    // 🔹 find department id from department_name
-    const dept = departmentMasters.find(
-      d => d.name === row.department_name
-    );
+    
+    // Only process department/manager logic for PROJECT type
+    if (masterType === "PROJECT") {
+      const dept = departmentMasters.find(
+        d => d.name === row.department_name
+      );
 
-    if (dept?.id && onDepartmentChange) {
-      onDepartmentChange(dept.id);
+      if (dept?.id && onDepartmentChange) {
+        onDepartmentChange(dept.id);
+      }
+
+      const managerIds = Array.isArray(row.managers)
+        ? row.managers
+            .map(name =>
+              allManagers.find(m => {
+                const fullName =
+                  m.full_name ||
+                  `${m.user?.first_name || ""} ${m.user?.last_name || ""}`.trim();
+                return fullName === name;
+              })?.id
+            )
+            .filter(Boolean)
+        : [];
+
+      const normalized = {
+        ...row,
+        department_id: dept?.id || null,
+        managers: managerIds,
+      };
+
+      setEditItem(normalized);
+    } else {
+      // Simple masters: just use the row as-is
+      setEditItem(row);
     }
-
-    // 🔹 find manager ids from names
-    const managerIds = Array.isArray(row.managers)
-      ? row.managers
-          .map(name =>
-            allManagers.find(m => {
-              const fullName =
-                m.full_name ||
-                `${m.user?.first_name || ""} ${m.user?.last_name || ""}`.trim();
-              return fullName === name;
-            })?.id
-          )
-          .filter(Boolean)
-      : [];
-
-    const normalized = {
-      ...row,
-      department_id: dept?.id || null,
-      managers: managerIds,
-    };
-
-    setEditItem(normalized);
+    
     setShowForm(true);
   };
 
-  const saveItem = async (data, meta = {}) => {
+    const saveItem = async (data, meta = {}) => {
 
     // =====================================================
-    // PROJECT-SPECIFIC FRONTEND VALIDATION
+    // FRONTEND VALIDATION
     // =====================================================
+    if (!data.name || data.name.trim() === "") {
+        setAlert({ type: "danger", message: `${singularName} name is required` });
+        return;
+    }
+    
     if (masterType === "PROJECT") {
         if (!data.department_id) {
             setAlert({ type: "danger", message: "Department is required" });
@@ -768,7 +804,6 @@ function GenericCRUDPage({
         } else {
           await MasterAPI.create(masterType, {
             ...data,
-            status: "Active",
           });
           reloadMasters(true);
           await loadItems();
@@ -801,16 +836,17 @@ function GenericCRUDPage({
         columns={columns}
         loading={loading}
         searchPlaceholder={searchPlaceholder}
-        onAddNew={() => {
+                onAddNew={() => {
           fetchManagers?.();
 
-          // ✅ RESET department filter for Add mode
+          // RESET department filter for Add mode
           if (onDepartmentChange) {
             onDepartmentChange(null);
           }
 
           setEditItem(null);
-          setShowForm(true);
+          // Small delay to ensure state is cleared before modal opens
+          setTimeout(() => setShowForm(true), 0);
         }}
         onEdit={disableStatus ? null : editItemHandler}
         onDelete={disableStatus ? null : deleteItem}
@@ -940,6 +976,7 @@ function GenericCRUDPage({
       {deptDeactivateTarget && (
         <DeactivateDepartmentModal
           department={deptDeactivateTarget}
+          departments={departmentMasters}
           loading={deptDeactivateLoading}
           onCancel={() => setDeptDeactivateTarget(null)}
           onConfirm={confirmDepartmentDeactivation}
@@ -955,6 +992,8 @@ function GenericCRUDPage({
 // ============================================================================
 
 function RolesPage() {
+  const { masters } = useMasterData();
+  
   return (
     <GenericCRUDPage
       masterType="ROLE"
@@ -967,13 +1006,16 @@ function RolesPage() {
         { key: "actions", label: "Actions" },
       ]}
       formFields={[
-        { key: "name", label: "Role Name" }
+        { key: "name", label: "Role Name" },
       ]}
+      departmentMasters={masters.DEPARTMENT || []}
     />
   );
 }
 
 function DepartmentsPage() {
+  const { masters } = useMasterData();
+  
   return (
     <GenericCRUDPage
       masterType="DEPARTMENT"
@@ -985,16 +1027,19 @@ function DepartmentsPage() {
         { key: "actions", label: "Actions" },
       ]}
       formFields={[
-        { key: "name", label: "Department Name" },
+        { key: "name", label: "Department Name" },  // No type, so it renders input
       ]}
+      departmentMasters={masters.DEPARTMENT || []}
     />
   );
 }
 
 function MeasurementsPage() {
+  const { masters } = useMasterData();
+  
   return (
     <GenericCRUDPage
-      masterType="METRIC"
+      masterType="MEASUREMENT"
       singularName="Measurement"
       searchPlaceholder="Search measurements..."
       columns={[
@@ -1003,11 +1048,13 @@ function MeasurementsPage() {
         { key: "actions", label: "Actions" },
       ]}
       formFields={[
-        { key: "name", label: "Measurement Name" }
+        { key: "name", label: "Measurement Name" },
       ]}
+      departmentMasters={masters.DEPARTMENT || []}
     />
   );
 }
+
 
 function ProjectsPage() {
   const { masters, reloadMasters } = useMasterData();
@@ -1017,7 +1064,7 @@ function ProjectsPage() {
 
   const fetchManagers = () => {
     axiosInstance
-      .get("/employee/employees/", {
+      .get("employee/employees/", {
         params: {
           role: "Manager",
           status: "Active",
@@ -1076,10 +1123,12 @@ function ProjectsPage() {
         key: "managers",
         label: "Manager",
         type: "select",
-        options: filteredManagers,
+        // Use a stable reference or empty array to prevent re-renders
+        options: filteredManagers.length > 0 ? filteredManagers : [],
       },
     ];
-  }, [masters.DEPARTMENT, filteredManagers]);
+    // Only depend on stable values, not filteredManagers which changes frequently
+  }, [masters.DEPARTMENT, selectedDepartment]); // Use selectedDepartment instead of filteredManagers
 
 
 
@@ -1143,7 +1192,7 @@ function EmployeeRoleAssignmentsPage() {
   // -------------------------
   useEffect(() => {
     axiosInstance
-      .get("/employee/employees/", { params: { status: "Active" } })
+      .get("employee/employees/", { params: { status: "Active" } })
       .then((res) => setEmployees(res.data?.results ?? []))
       .catch(() => setEmployees([]));
   }, []);

@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 import os
 from masters.models import Master, MasterType
-from employee_lifecycle.models import EmployeeDepartmentHistory, MovementType
+from masters.models import MasterStatus
 
 
 # Use the AUTH_USER_MODEL string to avoid import-time circular issues
@@ -60,16 +60,14 @@ class Employee(models.Model):
     # -----------------------------------------------------------
     # Professional Fields
     # -----------------------------------------------------------
-    designation = models.ForeignKey(
-        Master,
-        on_delete=models.PROTECT,
-        related_name="employees_by_designation",
-        limit_choices_to={"master_type": MasterType.DESIGNATION},
+    designation = models.CharField(
+        max_length=100,
         null=True,
         blank=True,
-        help_text="Designation (Master-based)"
+        db_index=True,
+        help_text="Employee designation (manual entry)"
     )
-    joining_date = models.DateField(default=timezone.now)
+    joining_date = models.DateField(default=timezone.localdate)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Active")
 
     # -----------------------------------------------------------
@@ -202,64 +200,26 @@ class Employee(models.Model):
             if ext not in [".jpg", ".jpeg", ".png"]:
                 raise ValidationError({"profile_picture": "Only JPG and PNG images are allowed."})
             
-        if self.status == "Active" and self.department.status != "Active":
-            raise ValidationError({
-                "status": "Employee cannot be active in an inactive department"
-            })
+        if self.status == "Active":
+
+            if self.department.status != MasterStatus.ACTIVE:
+                raise ValidationError({
+                    "status": "Employee cannot be active in an inactive department"
+                })
+
+            if self.role.status != MasterStatus.ACTIVE:
+                raise ValidationError({
+                    "status": "Employee cannot be active with an inactive role"
+                })
 
     # -----------------------------------------------------------
     # Save Override (JOIN lifecycle)
     # -----------------------------------------------------------
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-
         if not hasattr(self, "_validated_from_serializer"):
             self.full_clean()
-
-        if not is_new:
-            old = Employee.objects.select_related(
-                "department", "role", "designation"
-            ).get(pk=self.pk)
-
-            if old.department != self.department:
-                EmployeeDepartmentHistory.objects.filter(
-                    employee=self,
-                    left_at__isnull=True
-                ).update(left_at=timezone.now())
-
-                EmployeeDepartmentHistory.objects.create(
-                    employee=self,
-                    department=self.department,
-                    role=self.role,
-                    designation=self.designation,
-                    joined_at=timezone.now(),
-                    left_at=None,
-                    movement_type=MovementType.TRANSFER,
-                    reason="Department updated",
-                    action_by=getattr(self, "_action_user", self.user)
-                )
-
         super().save(*args, **kwargs)
 
-        if is_new:
-            action_user = getattr(self, "_action_user", None)
-
-            EmployeeDepartmentHistory.objects.create(
-                employee=self,
-                department=self.department,
-                role=self.role,
-                designation=self.designation,
-                joined_at=timezone.now(),
-                left_at=None,
-                movement_type=MovementType.JOIN,
-                reason="Initial join",
-                action_by=(
-                    action_user.user if hasattr(action_user, "user")
-                    else action_user
-                    if action_user
-                    else self.user
-                )
-            )
             
     # -----------------------------------------------------------
     # Save Override
@@ -271,19 +231,6 @@ class Employee(models.Model):
         """
         if self.is_deleted:
             raise ValidationError({"employee": "This employee is already deleted."})
-
-        # --------------------------------------------------
-        # Lifecycle termination record
-        # --------------------------------------------------
-        EmployeeDepartmentHistory.objects.filter(
-            employee=self,
-            left_at__isnull=True
-        ).update(
-            left_at=timezone.now(),
-            movement_type=MovementType.TERMINATION,
-            reason=reason,
-            action_by=action_by.user if action_by else self.user
-        )
 
         # --------------------------------------------------
         # Soft delete flags

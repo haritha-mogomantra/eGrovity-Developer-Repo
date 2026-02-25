@@ -107,7 +107,6 @@ function DynamicPerformanceReport() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
 
     const loadInitialReport = async () => {
       setLoading(true);
@@ -596,6 +595,12 @@ function DynamicPerformanceReport() {
   }, [filteredData, sortConfig, searchTerm]);
 
   const totalPages = Math.ceil(sortedData.length / pageSize);
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [totalPages]);
+
 
   const paginatedData = sortedData.slice(
     (currentPage - 1) * pageSize,
@@ -1134,7 +1139,7 @@ function DynamicPerformanceReport() {
                             <td>{emp.department}</td>
                             <td>{emp.manager}</td>
 
-                            <td style={{ cssText: "text-align: right !important;" }}>{emp.score}</td>
+                            <td style={{ textAlign: "right" }}>{emp.score}</td>
                             <td style={{ textAlign: "center" }}>{emp.rank}</td>
                           </>
                         )}
@@ -1146,7 +1151,7 @@ function DynamicPerformanceReport() {
                             <td>{emp.name}</td>
                             <td>{emp.manager}</td>
 
-                            <td style={{ cssText: "text-align: right !important;" }}>{emp.score}</td>
+                            <td style={{ textAlign: "right" }}>{emp.score}</td>
                             <td style={{ textAlign: "center" }}>{emp.rank}</td>
                           </>
                         )}
@@ -1158,7 +1163,7 @@ function DynamicPerformanceReport() {
                             <td>{emp.id}</td>
                             <td>{emp.name}</td>
 
-                            <td style={{ cssText: "text-align: right !important;" }}>{emp.score}</td>
+                            <td style={{ textAlign: "right" }}>{emp.score}</td>
                             <td style={{ textAlign: "center" }}>{emp.rank}</td>
                           </>
                         )}
@@ -1173,7 +1178,7 @@ function DynamicPerformanceReport() {
             <div className="dt-pagination d-flex justify-content-between align-items-center mt-3">
 
               <div className="text-muted" style={{ fontWeight: "normal", margin: 0 }}>
-                Showing {(currentPage - 1) * pageSize + 1} – 
+                Showing {sortedData.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} – 
                 {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} records
               </div>
 

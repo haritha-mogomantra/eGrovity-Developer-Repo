@@ -5,20 +5,17 @@ const EmployeeLifecycleAPI = {
    * Deactivate department and move employees
    * (WRITE → Masters domain)
    */
-  deactivateDepartment: async ({ departmentId, reason }) => {
+  deactivateDepartment: async ({
+    departmentId,
+    reason,
+    targetDepartmentId,
+  }) => {
     const res = await axiosInstance.post(
       `/masters/${departmentId}/deactivate/`,
-      { reason }
-    );
-    return res.data;
-  },
-
-  /**
-   * Preview impact of department deactivation (READ-ONLY)
-   */
-  previewDepartmentDeactivation: async (departmentId) => {
-    const res = await axiosInstance.get(
-      `/employee-lifecycle/departments/${departmentId}/summary/`
+      {
+        reason,
+        target_department_id: targetDepartmentId,
+      }
     );
     return res.data;
   },

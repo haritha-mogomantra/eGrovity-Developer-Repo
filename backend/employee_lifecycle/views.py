@@ -43,8 +43,7 @@ class DepartmentSummaryView(APIView):
 
     def get(self, request, department_id):
         department = Master.objects.filter(
-            id=department_id,
-            master_type=MasterType.DEPARTMENT
+            id=department_id
         ).first()
 
         if not department:

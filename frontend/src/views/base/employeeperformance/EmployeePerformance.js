@@ -18,28 +18,6 @@ const weekInputStyle = {
 const formatWeekValue = (year, week) =>
   `${year}-W${String(week).padStart(2, "0")}`;
 
-
-/*
-const getISOWeek = (date) => {
-  const temp = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  temp.setDate(temp.getDate() - dayNumber + 3);
-
-  const firstThursday = temp.valueOf();
-  temp.setMonth(0, 1);
-
-  const week =
-    Math.ceil((((firstThursday - temp) / 86400000) + temp.getDay() + 1) / 7);
-
-  return `${date.getFullYear()}-W${String(week).padStart(2, "0")}`;
-};
-
-const today = new Date();
-const maxWeek = getISOWeek(today);
-
-const minWeek = "2000-W01";
-*/
-
  
 function EmployeePerformance() {
   const navigate = useNavigate();
@@ -101,6 +79,7 @@ function EmployeePerformance() {
   // Fetch Performance Data
   useEffect(() => {
     const fetchPerformanceData = async () => {
+    if (!localStorage.getItem("access_token")) return; 
       
       if (!selectedWeek) return;
 
@@ -152,9 +131,8 @@ function EmployeePerformance() {
 
         const sanitized = finalRecords.map(emp => ({
           ...emp,
-          total_score: Number(emp.total_score),
-          rank: Number(emp.rank),
-
+          total_score: Number(emp.total_score || 0),
+          rank: Number(emp.rank || 0),
           // Ensures consistent evaluation period display
           display_period:
             emp.display_period ||
@@ -166,7 +144,7 @@ function EmployeePerformance() {
         setEmployees(sanitized);
         setVisibleCount(finalRecords.length);
         setTotalRecords(backend.count || 0);
-        setTotalPages(Math.ceil((backend.count || 0) / pageSize));
+        setTotalPages(Math.max(1, Math.ceil((backend.count || 0) / pageSize)));
       } catch (error) {
         console.error("Error fetching performance data:", error);
         setEmployees([]);
@@ -366,7 +344,7 @@ function EmployeePerformance() {
                       setPage(1);
                     }}
                     min="2000-W01"
-                    max={selectedWeek}
+                    max="2099-W52"
                   />
                 </div>
 

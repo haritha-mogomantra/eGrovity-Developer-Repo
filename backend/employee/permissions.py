@@ -20,5 +20,5 @@ class IsAdminUserRole(permissions.BasePermission):
         if user.is_superuser:
             return True
 
-        # Allow only Admin role
-        return getattr(user, "role", None) == "Admin"
+        employee = getattr(user, "employee_profile", None)
+        return employee and employee.role and employee.role.name == "Admin"

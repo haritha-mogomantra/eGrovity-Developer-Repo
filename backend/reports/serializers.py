@@ -4,6 +4,7 @@ from employee.models import Employee
 from .models import CachedReport
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict
+from masters.models import MasterType
 
 
 # =====================================================
@@ -34,7 +35,7 @@ class SimpleEmployeeSerializer(serializers.ModelSerializer, ScoreMixin):
 
     def get_department_name(self, obj):
         dept = getattr(obj, "department", None)
-        if dept and getattr(dept, "master_type", None) == "DEPARTMENT":
+        if dept and getattr(dept, "master_type", None) == MasterType.DEPARTMENT:
             return dept.name
         return "-"
 
@@ -76,8 +77,8 @@ class WeeklyReportSerializer(serializers.Serializer, ScoreMixin):
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         # be defensive: ensure keys exist
-        rep["average_score"] = self.round_score(rep.get("average_score", 0))
-        rep["total_score"] = self.round_score(rep.get("total_score", 0))
+        rep["average_score"] = self.round_score(rep.get("average_score"))
+        rep["total_score"] = self.round_score(rep.get("total_score"))
         return rep
 
 

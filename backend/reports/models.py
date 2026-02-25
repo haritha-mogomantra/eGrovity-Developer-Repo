@@ -6,7 +6,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 import os
-
+from masters.models import MasterType
 
 class CachedReport(models.Model):
     """
@@ -58,10 +58,10 @@ class CachedReport(models.Model):
         null=True,
         blank=True,
         related_name="department_reports",
-        limit_choices_to={"master_type": "DEPARTMENT"},
+        limit_choices_to={"master_type": MasterType.DEPARTMENT},
         help_text="Department reference (Master: DEPARTMENT)",
     )
-
+    
     # -----------------------------------------------------------
     # Cached Payload
     # -----------------------------------------------------------
@@ -144,7 +144,7 @@ class CachedReport(models.Model):
     # -----------------------------------------------------------
     def clean(self):
         """Ensure correct period fields based on report type."""
-        if self.report_type in ["weekly", "manager", "department"] and not self.week_number:
+        if self.report_type in ["weekly", "manager", "department"] and self.week_number is None:
             raise ValidationError("Week number is required for weekly/manager/department reports.")
         if self.report_type == "monthly" and not self.month:
             raise ValidationError("Month is required for monthly reports.")
@@ -214,7 +214,7 @@ class CachedReport(models.Model):
         elif self.report_type == "department":
             dept_name = (
                 self.department.name
-                if self.department and self.department.master_type == "DEPARTMENT"
+                if self.department and self.department.master_type == MasterType.DEPARTMENT
                 else "Deactivated Department"
             )
             return f"Department: {dept_name} ({self.get_period_display()})"
@@ -247,7 +247,7 @@ class CachedReport(models.Model):
         elif self.report_type == "department":
             dept_name = (
                 self.department.name
-                if self.department and self.department.master_type == "DEPARTMENT"
+                if self.department and self.department.master_type == MasterType.DEPARTMENT
                 else "Deactivated Department"
             )
             return f"Department Report — {dept_name} ({self.get_period_display()})"

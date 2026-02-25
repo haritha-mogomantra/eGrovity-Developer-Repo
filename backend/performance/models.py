@@ -6,6 +6,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
+from masters.models import MasterType
 from datetime import date
 
 
@@ -87,7 +88,7 @@ class PerformanceEvaluation(models.Model):
         null=True,
         blank=True,
         related_name="department_performances",
-        limit_choices_to={"master_type": "DEPARTMENT"},
+        limit_choices_to={"master_type": MasterType.DEPARTMENT},
         help_text="Department under which the evaluation is recorded.",
     )
 
@@ -118,43 +119,6 @@ class PerformanceEvaluation(models.Model):
         default="Manager",
         help_text="Who conducted the evaluation.",
     )
-
-    # -------------------------------------------------------
-    # Performance Metrics (0–100)
-    # -------------------------------------------------------
-    communication_skills = models.PositiveSmallIntegerField(default=0)
-    multitasking = models.PositiveSmallIntegerField(default=0)
-    team_skills = models.PositiveSmallIntegerField(default=0)
-    technical_skills = models.PositiveSmallIntegerField(default=0)
-    job_knowledge = models.PositiveSmallIntegerField(default=0)
-    productivity = models.PositiveSmallIntegerField(default=0)
-    creativity = models.PositiveSmallIntegerField(default=0)
-    work_quality = models.PositiveSmallIntegerField(default=0)
-    professionalism = models.PositiveSmallIntegerField(default=0)
-    work_consistency = models.PositiveSmallIntegerField(default=0)
-    attitude = models.PositiveSmallIntegerField(default=0)
-    cooperation = models.PositiveSmallIntegerField(default=0)
-    dependability = models.PositiveSmallIntegerField(default=0)
-    attendance = models.PositiveSmallIntegerField(default=0)
-    punctuality = models.PositiveSmallIntegerField(default=0)
-
-
-    communication_skills_comment = models.TextField(blank=True, null=True)
-    multitasking_comment = models.TextField(blank=True, null=True)
-    team_skills_comment = models.TextField(blank=True, null=True)
-    technical_skills_comment = models.TextField(blank=True, null=True)
-    job_knowledge_comment = models.TextField(blank=True, null=True)
-    productivity_comment = models.TextField(blank=True, null=True)
-    creativity_comment = models.TextField(blank=True, null=True)
-    work_quality_comment = models.TextField(blank=True, null=True)
-    professionalism_comment = models.TextField(blank=True, null=True)
-    work_consistency_comment = models.TextField(blank=True, null=True)
-    attitude_comment = models.TextField(blank=True, null=True)
-    cooperation_comment = models.TextField(blank=True, null=True)
-    dependability_comment = models.TextField(blank=True, null=True)
-    attendance_comment = models.TextField(blank=True, null=True)
-    punctuality_comment = models.TextField(blank=True, null=True)
-
 
     # -------------------------------------------------------
     # Computed Fields
@@ -196,35 +160,32 @@ class PerformanceEvaluation(models.Model):
     # Validation
     # -------------------------------------------------------
     def clean(self):
-        """Ensure each metric is between 0 and 100."""
-        for field in [
-            "communication_skills", "multitasking", "team_skills", "technical_skills",
-            "job_knowledge", "productivity", "creativity", "work_quality",
-            "professionalism", "work_consistency", "attitude", "cooperation",
-            "dependability", "attendance", "punctuality",
-        ]:
-            value = getattr(self, field, 0)
-            if value is None:
-                value = 0
-            if value < 0 or value > 100:
-                raise ValidationError({field: "Each metric must be between 0 and 100."})
+        if self.department and self.employee and self.department != self.employee.department:
+            raise ValidationError({
+                "department": "Evaluation department must match employee department."
+            })
 
     # -------------------------------------------------------
     # Score Calculation
     # -------------------------------------------------------
     def calculate_total_score(self):
-        """Calculate total and average scores for all metrics."""
-        metrics = [
-            self.communication_skills, self.multitasking, self.team_skills,
-            self.technical_skills, self.job_knowledge, self.productivity,
-            self.creativity, self.work_quality, self.professionalism,
-            self.work_consistency, self.attitude, self.cooperation,
-            self.dependability, self.attendance, self.punctuality,
-        ]
-        total = sum(int(x or 0) for x in metrics)
+        """Calculate total & average using dynamic Masters measurements only."""
+
+        scores = list(
+            self.dynamic_metrics.all().values_list("score", flat=True)
+        )
+
+        total = sum(int(x or 0) for x in scores)
+
         self.total_score = total
-        # 15 metrics × 100 = 1500 max
-        self.average_score = round((total / 1500) * 100, 2) if total >= 0 else 0.0
+
+        metric_count = len(scores)
+        max_score = metric_count * 100
+
+        self.average_score = (
+            round((total / max_score) * 100, 2) if max_score else 0.0
+        )
+
         return total
 
     # -------------------------------------------------------
@@ -263,15 +224,26 @@ class PerformanceEvaluation(models.Model):
     # Helpers
     # -------------------------------------------------------
     def get_metric_summary(self):
-        """Return compact JSON summary for reports/dashboards."""
+        """
+        Fully Masters-driven dynamic metrics.
+        Backend makes ZERO assumptions about metric names.
+        """
+
+        metrics = []
+
+        for metric in self.dynamic_metrics.select_related("measurement"):
+            metrics.append({
+                "id": metric.measurement.id,
+                "name": metric.measurement.name,
+                "code": getattr(metric.measurement, "code", None),
+                "score": metric.score,
+                "comment": metric.comment,
+            })
+
         return {
-            "communication": self.communication_skills,
-            "teamwork": self.team_skills,
-            "productivity": self.productivity,
-            "creativity": self.creativity,
-            "attendance": self.attendance,
-            "quality": self.work_quality,
-            "average": self.average_score,
+            "metrics": metrics,
+            "total_score": self.total_score,
+            "average_score": self.average_score,
             "rank": self.rank,
         }
 
@@ -282,7 +254,7 @@ class PerformanceEvaluation(models.Model):
             week_number=self.week_number,
             year=self.year,
             evaluation_type=self.evaluation_type,
-        ).order_by("-average_score", "employee__user__emp_id")
+        ).order_by("-total_score", "employee__user__emp_id")
         ordered_pks = [o.pk for o in qs]
         try:
             return ordered_pks.index(self.pk) + 1
@@ -295,7 +267,7 @@ class PerformanceEvaluation(models.Model):
             week_number=self.week_number,
             year=self.year,
             evaluation_type=self.evaluation_type,
-        ).order_by("-average_score", "employee__user__emp_id")
+        ).order_by("-total_score", "employee__user__emp_id")
         ordered_pks = [o.pk for o in qs]
         try:
             return ordered_pks.index(self.pk) + 1
@@ -318,6 +290,7 @@ class PerformanceEvaluation(models.Model):
             self.department = self.employee.department
 
         # Calculate scores
+        self.full_clean() 
         self.calculate_total_score()
 
         # Generate evaluation period using selected week/year
@@ -342,3 +315,32 @@ class PerformanceEvaluation(models.Model):
             else "Unknown Employee"
         )
         return f"{emp_name} - {self.evaluation_type} ({self.average_score}%)"
+
+
+class PerformanceMetric(models.Model):
+    """
+    Dynamic measurements driven by Masters → MEASUREMENT
+    Does NOT affect existing hardcoded metrics
+    """
+
+    evaluation = models.ForeignKey(
+        PerformanceEvaluation,
+        on_delete=models.CASCADE,
+        related_name="dynamic_metrics"
+    )
+
+    measurement = models.ForeignKey(
+        "masters.Master",
+        on_delete=models.PROTECT,
+        limit_choices_to={"master_type": MasterType.MEASUREMENT}
+    )
+
+    score = models.PositiveSmallIntegerField(default=0)
+    comment = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ("evaluation", "measurement")
+
+    def clean(self):
+        if self.score < 0 or self.score > 100:
+            raise ValidationError({"score": "Score must be between 0 and 100"})

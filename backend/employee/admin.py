@@ -38,7 +38,7 @@ class EmployeeAdmin(admin.ModelAdmin):
         "user__first_name",
         "user__last_name",
         "user__email",
-        "designation__name",
+        "designation",
     )
     list_filter = ("department", "role__name", "status", "joining_date")
     ordering = ("user__emp_id",)

@@ -6,7 +6,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
-from masters.models import Master, MasterType
+from django.apps import apps
 
 User = get_user_model()
 
@@ -35,24 +35,23 @@ class EmployeeDepartmentHistory(models.Model):
     )
 
     department = models.ForeignKey(
-        Master,
+        "masters.Master",
         on_delete=models.PROTECT,
         related_name='lifecycle_departments',
-        limit_choices_to={"master_type": MasterType.DEPARTMENT}
+        limit_choices_to={"master_type": "DEPARTMENT"}
     )
 
     role = models.ForeignKey(
-        Master,
+        "masters.Master",
         on_delete=models.PROTECT,
         related_name='lifecycle_roles',
-        limit_choices_to={"master_type": MasterType.ROLE}
+        limit_choices_to={"master_type": "ROLE"}
     )
 
-    designation = models.ForeignKey(
-        Master,
-        on_delete=models.PROTECT,
-        related_name='lifecycle_designations',
-        limit_choices_to={"master_type": MasterType.DESIGNATION}
+    designation = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True
     )
 
     joined_at = models.DateTimeField()

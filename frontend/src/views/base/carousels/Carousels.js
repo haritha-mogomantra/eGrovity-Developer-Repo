@@ -186,9 +186,11 @@ const ViewPerformance = () => {
   // ----------------------------------------
 
   useEffect(() => {
+    if (!employeeId) return;
     fetchEmployeeDetails();
     fetchPerformance();
   }, [employeeId]);
+
  
   // ----------------------------------------
 
@@ -223,13 +225,20 @@ const ViewPerformance = () => {
       const weekData = res.data || {};
       setPerformanceData(weekData);
 
-      let fields = fallbackMetrics;
+      let fields = [];
 
-      if (weekData?.scores && Object.keys(weekData.scores).length > 0) {
-        fields = Object.keys(weekData.scores);
-      } 
-      else if (weekData?.metrics?.length > 0) {
-        fields = weekData.metrics.map(m => m.name);
+      if (weekData?.metrics && typeof weekData.metrics === "object") {
+        fields = Object.keys(weekData.metrics)
+          .filter(key => !key.endsWith("_comment"));
+      }
+      else if (weekData?.evaluation_details?.length > 0) {
+        fields = weekData.evaluation_details.map(m => m.metric_name);
+      }
+      else if (weekData?.results?.length > 0) {
+        fields = weekData.results.map(m => m.metric);
+      }
+      else {
+        fields = fallbackMetrics;
       }
 
       setMeasurementFields(fields);
@@ -330,7 +339,7 @@ const ViewPerformance = () => {
 
               <tr className="fw-bold table-secondary">
                 <td>Total Score</td>
-                <td>{performanceData?.total_score || 0}</td>
+                <td>{performanceData?.total_score ?? 0}</td>
                 <td>—</td>
               </tr>
             </tbody>

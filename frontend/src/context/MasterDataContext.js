@@ -10,7 +10,7 @@ export const MasterDataProvider = ({ children }) => {
     ROLE: [],
     DEPARTMENT: [],
     PROJECT: [],
-    METRIC: [],
+    MEASUREMENT: [],
   });
 
   const loadedOnceRef = useRef(false);
@@ -24,10 +24,10 @@ export const MasterDataProvider = ({ children }) => {
     try {
         setLoading(true);
 
-      const types = ["ROLE", "DEPARTMENT", "PROJECT", "METRIC"];
+      const types = ["ROLE", "DEPARTMENT", "PROJECT", "MEASUREMENT"];
 
       const requests = types.map((type) =>
-        axiosInstance.get("/masters/dropdown/", {
+        axiosInstance.get("masters/dropdown/", {
           params: { type, status: "Active" },
         })
       );

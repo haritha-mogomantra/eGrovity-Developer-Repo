@@ -42,10 +42,31 @@ const adminMenu = [
     icon: <CIcon icon={cilLockLocked} customClassName="nav-icon" />,
   },
   {
-    component: CNavItem,
+    component: CNavGroup,
     name: "Reports",
-    to: "/reports/weekly",
     icon: <CIcon icon={cilCursor} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: "Weekly Reports",
+        to: "/reports/weekly",
+      },
+      {
+        component: CNavItem,
+        name: "Monthly Reports",
+        to: "/reports/monthly",
+      },
+      {
+        component: CNavItem,
+        name: "Department Reports",
+        to: "/reports/department",
+      },
+      {
+        component: CNavItem,
+        name: "Manager Reports",
+        to: "/reports/manager",
+      },
+    ],
   },
 
   {

@@ -24,12 +24,12 @@ export default function Login() {
 
       console.log("Response:", response.data);
 
-      if (response.status === 200 && response.data.access) {
+      if (response?.data?.access) {
         const {
           access,
           refresh,
           emp_id,
-          username,
+          username: loggedInUsername,
           role,
           first_name,
           last_name,
@@ -43,7 +43,7 @@ export default function Login() {
         // Save user info
         localStorage.setItem("emp_id", emp_id || "");
         localStorage.setItem("userId", emp_id || "");
-        localStorage.setItem("username", username || "");
+        localStorage.setItem("username", loggedInUsername || "");
         localStorage.setItem("role", role?.toLowerCase() || "");
 
         // Save names
@@ -61,7 +61,7 @@ export default function Login() {
           "user",
           JSON.stringify({
             emp_id,
-            username,
+            username: loggedInUsername,
             role: role?.toLowerCase() || "",
             full_name: `${first_name || ""} ${last_name || ""}`.trim(),
           })
@@ -79,15 +79,15 @@ export default function Login() {
 
         setAlert({
           show: true,
-          message: `Welcome ${role}! Login successful.`,
+          message: `Welcome ${role || "User"}! Login successful.`,
           type: "success",
         });
 
         setTimeout(() => {
-          if (role === "admin" || role === "manager") {
-            navigate("/dashboard");
+          if (role?.toLowerCase() === "admin" || role?.toLowerCase() === "manager") {
+            window.location.href = "/dashboard";
           } else {
-            navigate("/employee-dashboard");
+            window.location.href = "/employee-dashboard";
           }
         }, 1000);
 

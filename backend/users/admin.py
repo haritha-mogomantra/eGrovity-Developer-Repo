@@ -35,7 +35,7 @@ class UserAdmin(BaseUserAdmin):
         "account_locked",
         "failed_login_attempts",
         "lock_expiry_time",
-        "is_verified",
+        "is_email_verified",
         "is_staff",
         "joining_date",
     )
@@ -47,7 +47,7 @@ class UserAdmin(BaseUserAdmin):
         "department",
         "is_active",
         "account_locked",
-        "is_verified",
+        "is_email_verified",
         "is_staff",
         "is_superuser",
     )
@@ -101,7 +101,7 @@ class UserAdmin(BaseUserAdmin):
             _("Role & Access"),
             {
                 "fields": (
-                    "is_verified",
+                    "is_email_verified",
                     "is_active",
                     "is_staff",
                     "is_superuser",
@@ -201,7 +201,7 @@ class UserAdmin(BaseUserAdmin):
     def get_queryset(self, request):
         """Optimize query with department joins."""
         qs = super().get_queryset(request)
-        return qs.select_related("department")
+        return qs.select_related("department", "designation", "role")
 
     # ------------------------------------------------------
     # Admin Actions

@@ -77,7 +77,24 @@ const AppSidebar = () => {
   const unfoldable = useSelector((state) => state.sidebarUnfoldable);
   const sidebarShow = useSelector((state) => state.sidebarShow);
 
-const role = (localStorage.getItem("role") || "").toLowerCase();
+const [role, setRole] = React.useState(
+  (localStorage.getItem("role") || "").toLowerCase()
+);
+
+// ✅ KEEP SIDEBAR IN SYNC WITH LOGIN / LOGOUT
+React.useEffect(() => {
+  const updateRole = () => {
+    setRole((localStorage.getItem("role") || "").toLowerCase());
+  };
+
+  // Runs on tab changes (multi-tab case)
+  window.addEventListener("storage", updateRole);
+
+  // Runs immediately after login in same tab
+  updateRole();
+
+  return () => window.removeEventListener("storage", updateRole);
+}, []);
 
 const navigation = React.useMemo(() => {
   if (role === "admin" || role === "manager") return adminMenu;

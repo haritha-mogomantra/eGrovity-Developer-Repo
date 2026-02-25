@@ -4,10 +4,11 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from .models import PerformanceEvaluation
+from .models import PerformanceEvaluation, PerformanceMetric
 from employee.models import Employee
 from masters.models import Master
 from .models import is_latest_completed_week
+from django.db import transaction
 
 User = get_user_model()
 
@@ -137,55 +138,19 @@ class PerformanceEvaluationSerializer(serializers.ModelSerializer):
             "display_period",
         ]
 
-    # ---------- METRICS (Frontend expects simplified keys) ----------
     def get_metrics(self, obj):
-        return {
-            "communication_skills": obj.communication_skills,
-            "communication_skills_comment": obj.communication_skills_comment,
+        metrics = []
 
-            "multitasking": obj.multitasking,
-            "multitasking_comment": obj.multitasking_comment,
+        for metric in obj.dynamic_metrics.select_related("measurement"):
+            metrics.append({
+                "id": metric.measurement.id,
+                "name": metric.measurement.name,
+                "code": getattr(metric.measurement, "code", None),
+                "score": metric.score,
+                "comment": metric.comment,
+            })
 
-            "team_skills": obj.team_skills,
-            "team_skills_comment": obj.team_skills_comment,
-
-            "technical_skills": obj.technical_skills,
-            "technical_skills_comment": obj.technical_skills_comment,
-
-            "job_knowledge": obj.job_knowledge,
-            "job_knowledge_comment": obj.job_knowledge_comment,
-
-            "productivity": obj.productivity,
-            "productivity_comment": obj.productivity_comment,
-
-            "creativity": obj.creativity,
-            "creativity_comment": obj.creativity_comment,
-
-            "work_quality": obj.work_quality,
-            "work_quality_comment": obj.work_quality_comment,
-
-            "professionalism": obj.professionalism,
-            "professionalism_comment": obj.professionalism_comment,
-
-            "work_consistency": obj.work_consistency,
-            "work_consistency_comment": obj.work_consistency_comment,
-
-            "attitude": obj.attitude,
-            "attitude_comment": obj.attitude_comment,
-
-            "cooperation": obj.cooperation,
-            "cooperation_comment": obj.cooperation_comment,
-
-            "dependability": obj.dependability,
-            "dependability_comment": obj.dependability_comment,
-
-            "attendance": obj.attendance,
-            "attendance_comment": obj.attendance_comment,
-
-            "punctuality": obj.punctuality,
-            "punctuality_comment": obj.punctuality_comment,
-        }
-
+        return metrics
 
     # ---------- CUSTOM FIELDS (department, employee, evaluator) ----------
     def get_department_name(self, obj):
@@ -453,20 +418,6 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
                     "duplicate": f"Evaluation already exists for {emp.user.emp_id} (Week {week_number}, {year}, {evaluation_type})."
                 })
 
-        # Metric validation — ensure 0–100 integer values
-        for field, value in attrs.items():
-            if field.endswith("_skills") or field in [
-                "job_knowledge", "productivity", "creativity",
-                "work_quality", "professionalism", "work_consistency",
-                "attitude", "cooperation", "dependability", "attendance", "punctuality"
-            ]:
-                try:
-                    num = int(value)
-                except (TypeError, ValueError):
-                    raise serializers.ValidationError({field: "Metric must be an integer between 0–100."})
-                if not (0 <= num <= 100):
-                    raise serializers.ValidationError({field: "Metric must be between 0–100."})
-
         # Role restriction: Only Admin or Manager can evaluate
         request = self.context.get("request")
         if request and hasattr(request.user, "role"):
@@ -486,6 +437,7 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
 
     # ---------------------- Create ----------------------
     def create(self, validated_data):
+
         emp = self.context.get("employee")
         evaluator = self.context.get("evaluator")
         department = self.context.get("department")
@@ -493,32 +445,6 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
         for f in ["employee", "employee_emp_id", "evaluator_emp_id", "week"]:
             validated_data.pop(f, None)
 
-
-        # -----------------------------
-        # MERGE TOP-LEVEL METRIC FIELDS
-        # -----------------------------
-        metric_fields = {
-            "communication_skills", "multitasking", "team_skills", "technical_skills",
-            "job_knowledge", "productivity", "creativity", "work_quality",
-            "professionalism", "work_consistency", "attitude", "cooperation",
-            "dependability", "attendance", "punctuality"
-        }
-
-        # MERGE flat fields
-        for k in metric_fields:
-            if k in self.initial_data:
-                validated_data[k] = int(self.initial_data.get(k, 0))
-
-        # MERGE nested metrics object 
-        metrics = self.initial_data.get("metrics") or {}
-        if isinstance(metrics, dict):
-            for k, v in metrics.items():
-                if k in metric_fields:
-                    validated_data[k] = int(v)
-
-        # -----------------------------
-        # Create instance with metrics
-        # -----------------------------
         instance = PerformanceEvaluation.objects.create(
             employee=emp,
             evaluator=evaluator,
@@ -526,38 +452,27 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
             **validated_data,
         )
 
-        # -----------------------------
-        # MERGE COMMENT FIELDS
-        # -----------------------------
-        comment_fields = [
-            "communication_skills_comment", "multitasking_comment", "team_skills_comment",
-            "technical_skills_comment", "job_knowledge_comment", "productivity_comment",
-            "creativity_comment", "work_quality_comment", "professionalism_comment",
-            "work_consistency_comment", "attitude_comment", "cooperation_comment",
-            "dependability_comment", "attendance_comment", "punctuality_comment"
-        ]
+        metrics_payload = self.initial_data.get("metrics", [])
 
-        # From nested metrics object
-        metrics_comments = self.initial_data.get("metrics", {})
-        for field in comment_fields:
-            if field in metrics_comments:
-                setattr(instance, field, metrics_comments[field])
+        if isinstance(metrics_payload, list):
+            for metric in metrics_payload:
+                measurement_id = metric.get("measurement") or metric.get("id")
+                score = metric.get("score", 0)
+                comment = metric.get("comment")
 
-        # From flat POST level (optional)
-        for field in comment_fields:
-            if field in self.initial_data:
-                setattr(instance, field, self.initial_data[field])
+                if not measurement_id:
+                    continue
 
+                PerformanceMetric.objects.create(
+                    evaluation=instance,
+                    measurement_id=measurement_id,
+                    score=int(score or 0),
+                    comment=comment,
+                )
 
-        # -----------------------------
-        # RECALCULATE TOTAL & AVG
-        # -----------------------------
         instance.calculate_total_score()
         instance.save()
 
-        # -----------------------------
-        # UPDATE RANK
-        # -----------------------------
         try:
             instance.auto_rank_trigger()
         except:
@@ -582,52 +497,30 @@ class PerformanceCreateUpdateSerializer(serializers.ModelSerializer):
             if attr in ["employee", "employee_emp_id", "evaluator_emp_id"]:
                 continue
             setattr(instance, attr, value)
-
-        # ---------------------------------------
-        # Merge all metric fields (top-level + nested)
-        # ---------------------------------------
-        metric_fields = {
-            "communication_skills", "multitasking", "team_skills", "technical_skills",
-            "job_knowledge", "productivity", "creativity", "work_quality",
-            "professionalism", "work_consistency", "attitude", "cooperation",
-            "dependability", "attendance", "punctuality"
-        }
-
-        # TOP-LEVEL metrics 
-        for key in metric_fields:
-            if key in self.initial_data:
-                setattr(instance, key, int(self.initial_data.get(key, 0)))
-
-        # Nested metrics object (metrics={...})
-        metrics_obj = self.initial_data.get("metrics") or {}
-        if isinstance(metrics_obj, dict):
-            for key, value in metrics_obj.items():
-                if key in metric_fields:
-                    setattr(instance, key, int(value))
-
         
-        # -----------------------------
-        # MERGE COMMENT FIELDS
-        # -----------------------------
-        comment_fields = [
-            "communication_skills_comment", "multitasking_comment", "team_skills_comment",
-            "technical_skills_comment", "job_knowledge_comment", "productivity_comment",
-            "creativity_comment", "work_quality_comment", "professionalism_comment",
-            "work_consistency_comment", "attitude_comment", "cooperation_comment",
-            "dependability_comment", "attendance_comment", "punctuality_comment"
-        ]
+        metrics_payload = self.initial_data.get("metrics", [])
 
-        # From nested metrics object
-        metrics_comments = self.initial_data.get("metrics", {})
-        for field in comment_fields:
-            if field in metrics_comments:
-                setattr(instance, field, metrics_comments[field])
+        if isinstance(metrics_payload, list):
 
-        # From flat POST level (optional)
-        for field in comment_fields:
-            if field in self.initial_data:
-                setattr(instance, field, self.initial_data[field])
+            with transaction.atomic():
 
+                instance.dynamic_metrics.all().delete()
+
+                for metric in metrics_payload:
+                    measurement_id = metric.get("measurement") or metric.get("id")
+                    score = metric.get("score", 0)
+                    comment = metric.get("comment")
+
+                    if not measurement_id:
+                        continue
+
+                    PerformanceMetric.objects.create(
+                        evaluation=instance,
+                        measurement_id=measurement_id,
+                        score=int(score or 0),
+                        comment=comment,
+                    )
+            
 
         # ---------------------------------------
         # Recalculate totals
@@ -685,7 +578,9 @@ class PerformanceDashboardSerializer(serializers.ModelSerializer):
         return "-"
 
     def get_score_display(self, obj):
-        return f"{obj.total_score} / 1500"
+        metric_count = obj.dynamic_metrics.count()
+        max_score = metric_count * 100
+        return f"{obj.total_score} / {max_score or 100}"
 
 
 class PerformanceRankSerializer(serializers.ModelSerializer):
@@ -713,4 +608,6 @@ class PerformanceRankSerializer(serializers.ModelSerializer):
         return f"{u.first_name} {u.last_name}".strip()
 
     def get_score_display(self, obj):
-        return f"{obj.total_score} / 1500"
+        metric_count = obj.dynamic_metrics.count()
+        max_score = metric_count * 100
+        return f"{obj.total_score} / {max_score or 100}"

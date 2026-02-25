@@ -33,7 +33,7 @@ const AppHeaderDropdown = ({ userRole }) => {
           ? "/api/employee/admin/profile/" 
           : "/api/employee/profile/";
         
-        const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+        const response = await fetch(`${process.env.REACT_APP_API_BASE || "http://127.0.0.1:8000"}${endpoint}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -54,9 +54,10 @@ const AppHeaderDropdown = ({ userRole }) => {
       }
     };
 
-    if (role) {
-      fetchProfilePicture();
-    }
+    const token = localStorage.getItem("access_token");
+      if (role && token) {
+        fetchProfilePicture();
+      }
   }, [role]);
 
   // 🔹 SEPARATE useEffect FOR EVENT LISTENER (THIS IS THE FIX)

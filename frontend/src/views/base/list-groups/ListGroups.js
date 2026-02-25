@@ -12,6 +12,7 @@ const ChangePassword = () => {
  
   const [message, setMessage] = useState("");
   const [variant, setVariant] = useState("success");
+  const [saving, setSaving] = useState(false);
  
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -19,6 +20,7 @@ const ChangePassword = () => {
  
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
  
     const { currentPassword, newPassword, confirmPassword } = formData;
  
@@ -35,6 +37,7 @@ const ChangePassword = () => {
     }
  
     try {
+      setSaving(true);
      
       const response = await axiosInstance.post("users/change-password/", {
         old_password: currentPassword,
@@ -63,6 +66,8 @@ const ChangePassword = () => {
 
       setMessage("❌ " + errMsg);
       setVariant("danger");
+    } finally {
+      setSaving(false);
     }
   };
  
@@ -110,8 +115,8 @@ const ChangePassword = () => {
               </Form.Group>
  
               <div className="d-grid">
-                <Button variant="primary" type="submit">
-                  Update Password
+                <Button variant="primary" type="submit" disabled={saving}>
+                  {saving ? "Updating..." : "Update Password"}
                 </Button>
               </div>
             </Form>

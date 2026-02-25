@@ -4,7 +4,7 @@ from django.db import transaction
 import logging
 
 from .models import Employee
-from masters.models import Master
+from masters.models import Master, MasterType
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def update_department_count(department):
 
         Master.objects.filter(
             id=department.id,
-            master_type="DEPARTMENT"
+            master_type=MasterType.DEPARTMENT
         ).update(
             metadata={
                 **(department.metadata or {}),
@@ -66,7 +66,7 @@ def handle_employee_save(sender, instance, created, **kwargs):
             if old_id:
                 old_dept = Master.objects.filter(
                     id=old_id,
-                    master_type="DEPARTMENT"
+                    master_type=MasterType.DEPARTMENT
                 ).first()
                 update_department_count(old_dept)
 

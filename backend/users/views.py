@@ -15,7 +15,7 @@ from django.db import transaction
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.contrib.auth.password_validation import ValidationError
 from django.core.validators import validate_email
 from users.models import generate_strong_password
 from django.views.decorators.csrf import csrf_exempt
@@ -380,11 +380,15 @@ class UserPagination(PageNumberPagination):
 
 
 class UserListView(generics.ListAPIView):
-    queryset = User.objects.select_related("department").order_by("emp_id")
+    queryset = User.objects.select_related(
+        "department",
+        "designation",
+        "role"
+    ).order_by("emp_id")
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["username", "emp_id", "email", "first_name", "last_name", "status"]
+    search_fields = ["username", "emp_id", "email", "first_name", "last_name"]
     ordering_fields = ["emp_id", "username", "joining_date"]
     pagination_class = UserPagination
 
@@ -478,7 +482,7 @@ class UserDetailView(APIView):
             "last_name",
             "email",
             "phone",
-            "is_verified",
+            "is_email_verified",
             "is_active",
             "department",
             "designation",
@@ -626,7 +630,11 @@ class AdminUserListView(generics.ListAPIView):
     GET /api/users/login-details/
     Lists all users with login metadata for admin view.
     """
-    queryset = User.objects.select_related("department").order_by("emp_id")
+    queryset = User.objects.select_related(
+        "department",
+        "designation",
+        "role"
+    ).order_by("emp_id")
     serializer_class = LoginDetailsSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = UserPagination
@@ -638,7 +646,7 @@ class AdminUserListView(generics.ListAPIView):
     def get_queryset(self):
         return (
             User.objects
-            .select_related("department")
+            .select_related("department", "designation", "role")
             .filter(is_active=True)
             .order_by("emp_id")
         )

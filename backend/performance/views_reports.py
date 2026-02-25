@@ -8,7 +8,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import PerformanceEvaluation
-from employee.models import Employee, Department
+from employee.models import Employee
+from masters.models import MasterType
 from .serializers import PerformanceEvaluationSerializer
 from .utils_export import generate_excel_report, generate_pdf_report
 
@@ -35,9 +36,12 @@ class PerformanceReportView(generics.ListAPIView):
             qs = qs.filter(employee__user=user)
 
         if filter_type == "weekly" and value:
-            qs = qs.filter(week_number=value)
+            qs = qs.filter(week_number=int(value))
         elif filter_type == "department" and value:
-            qs = qs.filter(department__code__iexact=value)
+            qs = qs.filter(
+                department__master_type=MasterType.DEPARTMENT,
+                department__code__iexact=value
+            )
         elif filter_type == "manager" and value:
             qs = qs.filter(employee__manager__user__emp_id__iexact=value)
 
@@ -64,11 +68,14 @@ class PerformanceExcelExportView(generics.GenericAPIView):
         value = request.query_params.get("value")
 
         if filter_type == "department" and value:
-            qs = qs.filter(department__code__iexact=value)
+            qs = qs.filter(
+                department__master_type=MasterType.DEPARTMENT,
+                department__code__iexact=value
+            )
         elif filter_type == "manager" and value:
             qs = qs.filter(employee__manager__user__emp_id__iexact=value)
         elif filter_type == "week" and value:
-            qs = qs.filter(week_number=value)
+            qs = qs.filter(week_number=int(value))
 
         filename = f"performance_report_{timezone.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return generate_excel_report(qs, filename)
@@ -105,7 +112,7 @@ class ManagerWiseWeeklyReportView(generics.ListAPIView):
             raise ValidationError({"manager_name": "Manager name is required."})
 
         # Split full name → first and last
-        parts = manager_name.split()
+        parts = manager_name.strip().split()
         first_name = parts[0]
         last_name = parts[1] if len(parts) > 1 else ""
 
@@ -122,7 +129,7 @@ class ManagerWiseWeeklyReportView(generics.ListAPIView):
         qs = PerformanceEvaluation.objects.filter(employee__manager=manager)
 
         if week:
-            qs = qs.filter(week_number=week)
+            qs = qs.filter(week_number=int(week))
         if year:
             qs = qs.filter(year=year)
 

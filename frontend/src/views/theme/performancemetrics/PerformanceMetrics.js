@@ -16,22 +16,6 @@ const readOnlyStyle = {
   pointerEvents: "none",
 };
 
-/*
-const getISOWeek = (date) => {
-  const temp = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  temp.setDate(temp.getDate() - dayNumber + 3);
-
-  const firstThursday = temp.valueOf();
-  temp.setMonth(0, 1);
-
-  const week =
-    Math.ceil((((firstThursday - temp) / 86400000) + temp.getDay() + 1) / 7);
-
-  return `${date.getFullYear()}-W${String(week).padStart(2, "0")}`;
-};
-*/
-
 // Format week as "Week 48 (24 Nov - 30 Nov 2025)"
 const formatWeekRange = (weekValue) => {
   if (!weekValue) return "";
@@ -141,7 +125,7 @@ const PerformanceMetrics = () => {
     )?.name || "";
 
 
-  const measurements = (masters?.METRIC || [])
+  const measurements = (masters?.MEASUREMENT || [])
     .filter(m => m.status === "Active")
     .sort((a, b) => a.id - b.id)
     .map(m => m.name);

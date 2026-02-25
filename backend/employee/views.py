@@ -15,7 +15,7 @@ from django.db.models import Q, F, Value, CharField
 from django.db.models.functions import Coalesce, Concat
 from django.db.models.functions import Coalesce, Concat, NullIf
 from .models import Employee
-from masters.models import Master, MasterType
+from masters.models import Master, MasterType, MasterStatus
 
 from .serializers import (
     EmployeeSerializer,
@@ -60,7 +60,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status"]
     search_fields = [
         "user__first_name", "user__last_name", "user__emp_id",
-        "designation__name", "contact_number", "department__name"
+        "designation", "contact_number", "department__name"
     ]
     ordering_fields = [
         "user__emp_id",
@@ -218,7 +218,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         employee = serializer.save()
         employee.refresh_from_db()
 
-        total_count = Employee.objects.filter(status="Active").count()
+        total_count = Employee.objects.filter(status="Active", is_deleted=False).count()
 
         return Response({
             "message": "Employee created successfully.",
@@ -236,6 +236,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(employee, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
+
+        employee._action_user = request.user
+        
         serializer.save()
         employee.refresh_from_db()
 
@@ -504,7 +507,7 @@ class EmployeeCSVUploadView(APIView):
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
 
-        total_employees = Employee.objects.filter(status="Active").count()
+        total_employees = Employee.objects.filter(status="Active", is_deleted=False).count()
 
         return Response({
             "message": f"CSV processed successfully. {result.get('success_count', 0)} added.",

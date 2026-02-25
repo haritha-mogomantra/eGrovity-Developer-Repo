@@ -35,7 +35,7 @@ class EmployeeLifecycleSerializer(serializers.ModelSerializer):
         return obj.role.name if obj.role else "-"
 
     def get_designation(self, obj):
-        return obj.designation.name if obj.designation else "-"
+        return obj.designation if obj.designation else "-"
 
     def get_action_by(self, obj):
         if not obj.action_by:

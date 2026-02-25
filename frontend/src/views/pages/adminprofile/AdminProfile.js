@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Profile from "../../../components/profile/Profile";
+const DEFAULT_PROFILE = "/default-profile.png";
  
 const AdminProfile = () => {
   const [profileData, setProfileData] = useState(null);

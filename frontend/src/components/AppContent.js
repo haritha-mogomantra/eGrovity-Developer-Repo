@@ -21,9 +21,26 @@ const AppContent = () => {
           <Route
             index
             element={
-              !localStorage.getItem("access_token")
-                ? <Navigate to="/login" replace />
-                : <Navigate to={getDefaultRoute()} replace />
+              (() => {
+                const token = localStorage.getItem("access_token");
+
+                if (!token) return <Navigate to="/login" replace />;
+
+                try {
+                  const payload = JSON.parse(atob(token.split(".")[1]));
+                  const expiry = payload.exp * 1000;
+
+                  if (Date.now() >= expiry) {
+                    localStorage.clear();
+                    return <Navigate to="/login" replace />;
+                  }
+
+                  return <Navigate to={getDefaultRoute()} replace />;
+                } catch {
+                  localStorage.clear();
+                  return <Navigate to="/login" replace />;
+                }
+              })()
             }
           />
           {routes.map((route, idx) => {

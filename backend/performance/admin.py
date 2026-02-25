@@ -86,29 +86,34 @@ class PerformanceEvaluationAdmin(admin.ModelAdmin):
     get_employee_name.short_description = "Employee Name"
 
     def get_department_name(self, obj):
-        if obj.department:
+        if obj.department and obj.department.master_type == "DEPARTMENT":
             return obj.department.name
         return "-"
     get_department_name.short_description = "Department"
 
     def colored_score(self, obj):
-        """Display average score with color coding."""
         score = obj.average_score or 0
+        metrics_count = obj.dynamic_metrics.count()
+
         if score >= 85:
             color = "green"
         elif score >= 70:
             color = "orange"
         else:
             color = "red"
-        return format_html(f"<b><span style='color:{color};'>{score}%</span></b>")
+
+        return format_html(
+            f"<b><span style='color:{color};' title='Metrics: {metrics_count}'>{score}%</span></b>"
+        )
     colored_score.short_description = "Average Score"
 
     def rank_icon(self, obj):
-        """Display medal emoji for top performers."""
-        if obj.rank and obj.rank <= 3:
+        if not obj.rank:
+            return "-"
+
+        if obj.rank <= 3:
             medals = {1: "🥇", 2: "🥈", 3: "🥉"}
             return format_html(f"<b>{medals.get(obj.rank, '')} #{obj.rank}</b>")
-        elif obj.rank:
-            return f"#{obj.rank}"
-        return "-"
+
+        return f"#{obj.rank}"
     rank_icon.short_description = "Rank"

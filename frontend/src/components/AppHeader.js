@@ -276,8 +276,16 @@ const AppHeader = () => {
   // 1️⃣ LOAD USER ROLE
   // ==========================================================
   useEffect(() => {
-    const savedRole = localStorage.getItem("role");
-    setUserRole(savedRole ? savedRole.toLowerCase() : "guest");
+    const updateRole = () => {
+      const savedRole = localStorage.getItem("role");
+      setUserRole(savedRole ? savedRole.toLowerCase() : "guest");
+    };
+
+    updateRole(); // run immediately
+
+    window.addEventListener("storage", updateRole);
+
+    return () => window.removeEventListener("storage", updateRole);
   }, []);
 
   // ==========================================================

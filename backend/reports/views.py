@@ -19,6 +19,7 @@ from django.db.models.functions import Rank
 from django.utils import timezone
 from django.http import HttpResponse
 from datetime import timedelta
+from masters.models import MasterType
 from itertools import chain
 
 from openpyxl import Workbook
@@ -101,7 +102,7 @@ def normalize_report_rows(records):
     #  Fetch ALL departments once (code → full name)
     department_map = {
         d.code.upper(): d.name
-        for d in Master.objects.filter(master_type="DEPARTMENT", is_active=True)
+        for d in Master.objects.filter(master_type=MasterType.DEPARTMENT, is_active=True)
         if d.code
     }
 
@@ -210,7 +211,7 @@ class WeeklyReportView(APIView):
                     "employee_full_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
                     "department": (
                         emp.department.name
-                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                         else "-"
                     ),
                     "manager_full_name": manager_full,
@@ -302,7 +303,7 @@ class MonthlyReportView(APIView):
                     "employee_full_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
                     "department": (
                         emp.department.name
-                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                         else "-"
                     ),
                     "manager_full_name": manager_full_name, 
@@ -403,11 +404,13 @@ class DepartmentReportView(APIView):
             else:
                 employees = Employee.objects.filter(
                     Q(
-                        department__master_type="DEPARTMENT",
+                        department__master_type=MasterType.DEPARTMENT,
+                        department__is_active=True,
                         department__name__iexact=department_name
                     ) |
                     Q(
-                        department__master_type="DEPARTMENT",
+                        department__master_type=MasterType.DEPARTMENT,
+                        department__is_active=True,
                         department__code__iexact=department_name
                     )
                 )
@@ -443,12 +446,12 @@ class DepartmentReportView(APIView):
                 records.append({
                     "department_name": (
                         emp.department.name
-                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                         else "-"
                     ),
                     "department": (
                         emp.department.name
-                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                         else "-"
                     ),
                     "emp_id": emp.user.emp_id,
@@ -567,7 +570,7 @@ class ManagerReportView(APIView):
                     "employee_full_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
                     "department": (
                         emp.department.name
-                        if emp.department and emp.department.master_type == "DEPARTMENT"
+                        if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                         else "-"
                     ),
                     "manager_full_name": manager_full_name, 
@@ -684,10 +687,9 @@ class ExportWeeklyExcelView(APIView):
                         f"{perf.employee.user.first_name} {perf.employee.user.last_name}",
                         (
                             perf.department.name
-                            if perf.department and perf.department.master_type == "DEPARTMENT"
+                            if perf.department and perf.department.master_type == MasterType.DEPARTMENT
                             else "-"
                         ),
-                        manager_full_name,
                         float(perf.total_score),
                         float(perf.average_score),
                         int(perf.computed_rank),
@@ -801,7 +803,7 @@ class ExportMonthlyExcelView(APIView):
                         f"{emp.user.first_name} {emp.user.last_name}",
                         (
                             emp.department.name
-                            if emp.department and emp.department.master_type == "DEPARTMENT"
+                            if emp.department and emp.department.master_type == MasterType.DEPARTMENT
                             else "-"
                         ),
                         manager_full_name,

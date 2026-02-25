@@ -42,7 +42,7 @@ def auto_rank_on_save(sender, instance, created, **kwargs):
                     week_number=week,
                     year=year,
                 )
-                .order_by("-average_score", "employee__user__first_name")
+                .order_by("-total_score", "employee__user__first_name")
                 .select_related("employee__user")
             )
 

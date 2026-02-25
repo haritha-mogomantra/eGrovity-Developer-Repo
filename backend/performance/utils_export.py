@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from django.http import HttpResponse
+from masters.models import MasterType
 from django.utils import timezone
 
 
@@ -34,8 +35,16 @@ def generate_excel_report(evaluations, filename="performance_report.xlsx"):
         ws.append([
             e.employee.user.emp_id,
             f"{e.employee.user.first_name} {e.employee.user.last_name}",
-            e.department.name if e.department else "-",
-            e.employee.manager.user.first_name if e.employee.manager else "-",
+            (
+                e.department.name
+                if e.department and e.department.master_type == MasterType.DEPARTMENT
+                else "-"
+            ),
+            (
+                f"{e.employee.manager.user.first_name} {e.employee.manager.user.last_name}"
+                if e.employee.manager and e.employee.manager.user
+                else "-"
+            ),
             e.week_number,
             e.year,
             e.total_score,
@@ -67,7 +76,13 @@ def generate_pdf_report(employee, evaluations):
     story.append(Paragraph(f"<b>Employee Performance Report</b>", styles["Title"]))
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"<b>Employee:</b> {employee.user.first_name} {employee.user.last_name}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Department:</b> {employee.department.name if employee.department else '-'}", styles["Normal"]))
+    story.append(
+        Paragraph(
+            f"<b>Department:</b> "
+            f"{(employee.department.name if employee.department and employee.department.master_type == MasterType.DEPARTMENT else '-')}",
+            styles["Normal"]
+        )
+    )
     story.append(Paragraph(f"<b>Generated on:</b> {timezone.now().strftime('%d %b %Y, %H:%M')}", styles["Normal"]))
     story.append(Spacer(1, 12))
 

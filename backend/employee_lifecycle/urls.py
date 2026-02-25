@@ -6,6 +6,7 @@ from django.urls import path
 from .views import (
     DepartmentSummaryView,
     EmployeeLifecycleHistoryView,
+    MasterDeactivationView,
 )
 
 urlpatterns = [
@@ -27,5 +28,11 @@ urlpatterns = [
         "history/",
         EmployeeLifecycleHistoryView.as_view(),
         name="employee-lifecycle-history",
+    ),
+
+    path(
+        "<int:pk>/deactivate/",
+        MasterDeactivationView.as_view(),
+        name="master-deactivate"
     ),
 ]

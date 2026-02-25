@@ -452,14 +452,14 @@ const LoginDetails = () => {
 
                   <th
                     ref={(el) => (headerRefs.current["username"] = el)}
-                    onClick={() => handleSort("emp_id")}
+                    onClick={() => handleSort("username")}
                     style={{ cursor: "pointer" }}
                   >
                     <div className="d-flex justify-content-between align-items-center">
                       <span>Username</span>
                       <SortIcon
-                        state={getSortState("emp_id")}
-                        onClick={() => handleSort("emp_id")}
+                        state={getSortState("username")}
+                        onClick={() => handleSort("username")}
                       />
                     </div>
                   </th>
@@ -487,7 +487,7 @@ const LoginDetails = () => {
                       <td>{emp.emp_id}</td>
                       <td>{emp.full_name || "-"}</td>
                       <td>{getRoleName(emp.role)}</td>
-                      <td>{emp.emp_id}</td>
+                      <td>{emp.username || "-"}</td>
                       <td className="text-start">
                         <input
                           type="text"

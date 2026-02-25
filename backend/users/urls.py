@@ -39,22 +39,19 @@ app_name = "users"
 # ===========================================================
 
 urlpatterns = [
-    # Authentication
     path("login/", ObtainTokenPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", RefreshTokenView.as_view(), name="token_refresh"),
 
-    # Registration & Profile Management
     path("register/", RegisterView.as_view(), name="user_register"),
     path("profile/", ProfileView.as_view(), name="user_profile"),
     path("change-password/", ChangePasswordView.as_view(), name="change_password"),
 
-    # Roles & Directory
     path("roles/", RoleListView.as_view(), name="role_list"),
     path("list/", UserListView.as_view(), name="user_list"),
 
-    # Admin Utilities
     path("reset-password/", reset_password, name="reset_password"),
     path("regenerate-password/<str:emp_id>/", regenerate_password, name="regenerate_password"),
     path("login-details/", AdminUserListView.as_view(), name="login_details"),
-    path("<str:emp_id>/", UserDetailView.as_view(), name="user_detail"),
+
+    path("<str:emp_id>/", UserDetailView.as_view(), name="user_detail"),  # ✅ ALWAYS LAST
 ]

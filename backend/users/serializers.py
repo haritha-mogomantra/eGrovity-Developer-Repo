@@ -14,10 +14,11 @@ import re
 from datetime import datetime, date
 from masters.models import Master, MasterType
 from users.models import generate_strong_password
+from masters.models import MasterStatus
 
 User = get_user_model()
 
-'''
+"""
 # ===========================================================
 # EMP ID GENERATOR
 # ===========================================================
@@ -36,8 +37,7 @@ def generate_emp_id():
             last_number = 0
 
         return f"EMP{last_number + 1:04d}"
-'''
-
+"""
 # ===========================================================
 # 1. LOGIN SERIALIZER (username / emp_id / email)
 # ===========================================================
@@ -133,7 +133,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                     "emp_id": user.emp_id,
                     "username": user.username,
                     "email": user.email,
-                    "designation": user.designation,
+                    "designation": user.designation.name if user.designation else None,
+                    "role": user.role.name if user.role else None,
+                    "department": user.department.name if user.department else None,
                 },
             }
 
@@ -202,9 +204,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "last_name": user.last_name or "",
                 "full_name": f"{user.first_name} {user.last_name}".strip(),
                 "department": user.department.name if user.department else None,
-                "designation": user.designation,
-                "status": user.status,
-                "is_verified": getattr(user, "is_verified", False),
+                "designation": user.designation.name if user.designation else None,
+                "role": user.role.name if user.role else None,
+                "status": user.account_status,
+                "is_verified": user.is_email_verified,
                 "is_active": user.is_active,
             }
         }
@@ -308,12 +311,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         department_instance = Master.objects.filter(
             master_type=MasterType.DEPARTMENT,
             name__iexact=dept_value,
-            status="Active"
+            status=MasterStatus.ACTIVE
         ).first()
 
         if not department_instance:
             raise serializers.ValidationError({"department": f"Department '{dept_value}' not found."})
-        if department_instance.status != "Active":
+        if department_instance.status != MasterStatus.ACTIVE:
             raise serializers.ValidationError(
                 {"department": f"Department '{department_instance.name}' is inactive."}
             )
@@ -324,12 +327,25 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         temp_password = generate_strong_password(12)
 
+        designation_instance = None
+        if designation_value:
+            designation_instance = Master.objects.filter(
+                master_type=MasterType.DESIGNATION,
+                name__iexact=designation_value.strip(),
+                status=MasterStatus.ACTIVE
+            ).first()
+
+            if not designation_instance:
+                raise serializers.ValidationError({
+                    "designation": f"Designation '{designation_value}' not found."
+                })
+
         # Create User
         user = User.objects.create_user(
             emp_id=new_emp_id,
             password=temp_password,
             department=department_instance,
-            designation=designation_value,
+            designation=designation_instance,
             **validated_data,
         )
         user.force_password_change = True
@@ -346,7 +362,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         rep["temp_password"] = getattr(instance, "temp_password", None)
         if instance.department:
             rep["department"] = instance.department.name
-        rep["designation"] = instance.designation
+        rep["designation"] = instance.designation.name if instance.designation else None
         return rep
 
 
@@ -394,7 +410,8 @@ class ChangePasswordSerializer(serializers.Serializer):
 # ===========================================================
 class ProfileSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source="department.name", read_only=True)
-    designation = serializers.CharField(read_only=True)
+    designation = serializers.CharField(source="designation.name", read_only=True)
+    role = serializers.CharField(source="role.name", read_only=True)
     full_name = serializers.SerializerMethodField(read_only=True)
     joining_date = serializers.SerializerMethodField(read_only=True)
 
@@ -413,7 +430,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "designation",
             "phone",
             "joining_date",
-            "is_verified",
+            "is_email_verified",
             "is_active",
         ]
         read_only_fields = [
@@ -424,7 +441,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "full_name",
             "department_name",
             "joining_date",
-            "is_verified",
+            "is_email_verified",
             "is_active",
         ]
 
@@ -533,7 +550,9 @@ class RegeneratePasswordSerializer(serializers.Serializer):
 class LoginDetailsSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     department = serializers.CharField(source="department.name", read_only=True)
-    designation = serializers.CharField(read_only=True)
+    designation = serializers.CharField(source="designation.name", read_only=True)
+    role = serializers.CharField(source="role.name", read_only=True)
+    status = serializers.CharField(source="account_status", read_only=True)  # ✅ ADD THIS
     last_login = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", allow_null=True)
     date_joined = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S")
     temp_password = serializers.SerializerMethodField(read_only=True)

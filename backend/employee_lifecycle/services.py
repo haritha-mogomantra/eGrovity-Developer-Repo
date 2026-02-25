@@ -46,7 +46,7 @@ class LifecycleService:
                 left_at=now,
                 movement_type=MovementType.DEPT_DEACTIVATION,
                 reason=reason,
-                action_by=action_by.user if hasattr(action_by, "user") else action_by
+                action_by=action_by
             )
 
             # NOTE:
@@ -78,7 +78,7 @@ class LifecycleService:
                 joined_at=now,
                 movement_type=MovementType.AUTO_TRANSFER,
                 reason=f"Auto-transferred due to deactivation of {department.name}",
-                action_by=action_by.user if hasattr(action_by, "user") else action_by
+                action_by=action_by
             )
 
             summary["employees_moved"] += 1

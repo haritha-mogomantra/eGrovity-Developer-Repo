@@ -18,7 +18,7 @@ const isTokenValid = () => {
   if (!token) return false;
 
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const payload = JSON.parse(atob(token.split(".")?.[1] || ""));
     const expiry = payload.exp * 1000;
     return Date.now() < expiry;
   } catch {
@@ -50,7 +50,7 @@ const App = () => {
   // ✅ PROTECTED ROUTE COMPONENT
   const ProtectedRoute = ({ children, allowedRoles }) => {
     const tokenValid = isTokenValid();
-    const role = localStorage.getItem("role")?.toLowerCase();
+    const role = localStorage.getItem("role")?.toLowerCase().trim();
 
     if (!tokenValid) {
       return <Navigate to="/login" replace />;
@@ -83,7 +83,7 @@ const App = () => {
             <Route
               path="/"
               element={
-                isTokenValid() ? (
+                isTokenValid() && localStorage.getItem("role") ? (
                   <Navigate to="/dashboard" replace />
                 ) : (
                   <Navigate to="/login" replace />
