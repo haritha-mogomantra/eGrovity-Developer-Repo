@@ -12,7 +12,6 @@ from django.contrib.auth import get_user_model
 from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.db.models import Q, F, Value, CharField
-from django.db.models.functions import Coalesce, Concat
 from django.db.models.functions import Coalesce, Concat, NullIf
 from .models import Employee
 from masters.models import Master, MasterType, MasterStatus
@@ -83,7 +82,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         qs = Employee.objects.select_related("user", "department", "manager")
 
         employee = getattr(user, "employee_profile", None)
-        role = employee.role.name if employee and employee.role else ""
+        role = employee.role.name if employee and employee.role else None
 
         if role == "Manager":
             qs = qs.filter(manager=employee)
@@ -275,7 +274,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         managers = Employee.objects.select_related("user", "department").filter(
             Q(role__name__in=["Manager", "Admin"]),
-            status="Active"
+            status="Active",
+            is_deleted=False
         )
 
         #FILTER BY DEPARTMENT WHEN PROVIDED
@@ -314,17 +314,6 @@ class AdminProfileView(APIView):
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
 
-
-        # AUTO-CREATE EMPLOYEE PROFILE FOR ADMIN IF MISSING
-        employee = getattr(user, "employee_profile", None)
-
-        if not employee:
-            # Try active department first, fallback to first available
-            return Response(
-                {"error": "Employee profile not found. Contact administrator."},
-                status=status.HTTP_409_CONFLICT
-            )
-
         serializer = AdminProfileSerializer(employee, context={"request": request})
         data = serializer.data
 
@@ -343,14 +332,6 @@ class AdminProfileView(APIView):
         if not employee:
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
-
-        # AUTO-CREATE EMPLOYEE PROFILE IF MISSING
-        employee = getattr(user, "employee_profile", None)
-        if not employee:
-            return Response(
-                {"error": "Employee profile not found. Contact administrator."},
-                status=status.HTTP_409_CONFLICT
-            )
 
         serializer = AdminProfileSerializer(employee, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -379,8 +360,6 @@ class ManagerProfileView(APIView):
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
 
-        
-        employee = getattr(user, "employee_profile", None)
         if not employee:
             return Response({"error": "Employee record not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = ManagerProfileSerializer(employee, context={"request": request})
@@ -399,8 +378,6 @@ class ManagerProfileView(APIView):
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
 
-
-        employee = getattr(user, "employee_profile", None)
         if not employee:
             return Response({"error": "Employee record not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -427,8 +404,6 @@ class EmployeeProfileView(APIView):
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
 
-
-        employee = getattr(user, "employee_profile", None)
         if not employee:
             return Response({"error": "Employee record not found for this user."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -448,8 +423,6 @@ class EmployeeProfileView(APIView):
             return Response({"error": "Profile not found for this user."},
                             status=status.HTTP_404_NOT_FOUND)
 
-
-        employee = getattr(user, "employee_profile", None)
         if not employee:
             return Response({"error": "Employee record not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -490,8 +463,6 @@ class EmployeeCSVUploadView(APIView):
             "errors": result.get("errors", []),
         }, status=status.HTTP_201_CREATED)
     
-
-    @action(detail=False, methods=["POST"], url_path="upload_csv")
     @transaction.atomic
     def upload_csv(self, request):
         employee = getattr(request.user, "employee_profile", None)

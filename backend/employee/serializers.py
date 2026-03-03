@@ -153,6 +153,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
 # ===========================================================
 
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
+    emp_id = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
@@ -173,7 +174,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            "id", "email", "first_name", "last_name",
+            "id", "emp_id", "email", "first_name", "last_name",
             "contact_number", "department_name", "manager", "designation",
             "joining_date",
         ]
@@ -258,6 +259,20 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if designation_value:
             attrs["designation"] = designation_value.strip().title()
 
+        # 🔹 Validate emp_id (manual entry mode)
+        admin_emp_id = attrs.get("emp_id")
+
+        if not admin_emp_id:
+            raise serializers.ValidationError({
+                "emp_id": "Employee ID is required (Manual Entry Mode)."
+            })
+
+        if User.objects.filter(
+            Q(emp_id=admin_emp_id) | Q(username=admin_emp_id)
+        ).exists():
+            raise serializers.ValidationError({
+                "emp_id": "Employee ID already exists."
+            })
         return attrs
 
 
@@ -269,7 +284,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         email = validated_data.pop("email")
         first_name = validated_data.pop("first_name").strip().title()
         last_name = validated_data.pop("last_name").strip().title()
-
+        joining_date = validated_data.get("joining_date")
 
         if not department:
            raise serializers.ValidationError({"department_name": "Department not found or inactive."})
@@ -289,7 +304,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             })
 
         # ✅ emp_id belongs to USER, not Employee
-        admin_emp_id = self.initial_data.get("emp_id")
+        admin_emp_id = validated_data.pop("emp_id")
         if not admin_emp_id:
             raise serializers.ValidationError({"emp_id": "Employee ID is required (Manual Entry Mode)."})
 
@@ -300,26 +315,15 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 email=email,
                 first_name=first_name,
                 last_name=last_name,
-                department=department
+                department=department,
+                joining_date=joining_date
             )
         except IntegrityError as e:
-            error_msg = str(e)
-
-            if "users_user.email" in error_msg:
-                raise serializers.ValidationError({
-                    "email": "A user with this email already exists."
-                })
-
-            if "users_user.emp_id" in error_msg:
-                raise serializers.ValidationError({
-                    "emp_id": "Employee ID already exists."
-                })
-
-            raise serializers.ValidationError({
-                "error": "User creation failed due to database constraint."
-            })
-
-        validated_data.pop("emp_id", None)
+            if "email" in str(e).lower():
+                raise serializers.ValidationError({"email": "Email already exists."})
+            if "username" in str(e).lower() or "emp_id" in str(e).lower():
+                raise serializers.ValidationError({"emp_id": "Employee ID already exists."})
+            raise
 
         employee_role = Master.objects.filter(
             master_type=MasterType.ROLE,
@@ -774,7 +778,9 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                             errors.append(f"Row {i}: Contact number '{contact_number}' must start with +91 and be valid.")
                             continue
                     
-                    if User.objects.filter(emp_id=admin_emp_id).exists():
+                    if User.objects.filter(
+                        Q(emp_id=admin_emp_id) | Q(username=admin_emp_id)
+                    ).exists():
                         errors.append(f"Row {i}: Employee ID '{admin_emp_id}' already exists.")
                         continue
 
@@ -784,7 +790,8 @@ class EmployeeCSVUploadSerializer(serializers.Serializer):
                         email=email,
                         first_name=first_name,
                         last_name=last_name,
-                        department=department
+                        department=department,
+                        joining_date=joining_date
                     )
 
                     employee_role = Master.objects.filter(
